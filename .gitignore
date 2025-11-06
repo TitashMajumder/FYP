@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+
+# Environment variables (Keeps your API key secret!)
+.env
+
+# Database (Keeps your private survey data off GitHub!)
+*.db
+*.sqlite3
+
+# Temporary image files
+temp/
+
+# IDE files
+.vscode/

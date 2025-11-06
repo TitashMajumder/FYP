@@ -1,0 +1,16 @@
+pillow
+pandas
+scikit-learn
+folium
+gmplot
+requests
+matplotlib
+reportlab
+streamlit
+google-generativeai
+scikit-fuzzy
+networkx
+python-dotenv
+streamlit-folium
+sqlite3
+sqlalchemy
