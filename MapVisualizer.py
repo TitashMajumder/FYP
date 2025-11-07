@@ -23,24 +23,24 @@ def create_health_map(db_path):
      conn.close()
      
      df_gps = df[(df['latitude'] != 0.0) & (df['longitude'] != 0.0)]
-     
+
      if df_gps.empty:
           return folium.Map(location=[20.5937, 78.9629], zoom_start=5)
-          
+
      center_lat = df_gps['latitude'].mean()
      center_lon = df_gps['longitude'].mean()
      m = folium.Map(location=[center_lat, center_lon], zoom_start=15)
-     
+
      # --- 2. CREATE A MARKER CLUSTER ---
      marker_cluster = MarkerCluster().add_to(m)
-     
+
      color_map = {
           "Healthy": "green",
           "Stressed": "orange",
           "Diseased": "red",
           "Critical": "darkred"
      }
-     
+
      for _, row in df_gps.iterrows():
           health = row['health']
           color = color_map.get(health, "gray")
@@ -61,5 +61,4 @@ def create_health_map(db_path):
                popup=popup,
                icon=folium.Icon(color=color, icon='leaf', prefix='fa')
           ).add_to(marker_cluster)  # <--- THIS IS THE CHANGE
-          
      return m

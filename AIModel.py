@@ -17,6 +17,7 @@ genai.configure(api_key=api_key)
 generation_config = {
      "temperature": 0.0, 
 }
+
 model = genai.GenerativeModel(
      'gemini-2.5-pro',
      generation_config=generation_config
