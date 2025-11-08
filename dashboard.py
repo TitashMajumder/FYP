@@ -12,7 +12,7 @@ from streamlit_folium import st_folium
 from AutoCoordinate import get_lat_lon
 from MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_reliability_label
-from AIModel import analyze_tree_health, get_treatment_plan
+from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp
 from ReportGenerator import initialize_database, save_analysis_to_db
 
 # --- STREAMLIT DASHBOARD SETUP ---
@@ -89,7 +89,6 @@ with tab1:
 
      # --- 5. IMAGE PROCESSING & ANALYSIS (LOGIC UPDATED) ---
      if image_inputs:
-          # ... (Image saving and GPS logic is the same) ...
           temp_file_paths = []
           image_captions = []
           images_to_display = []
@@ -113,15 +112,23 @@ with tab1:
           lat, lon = get_lat_lon(primary_temp_path)
 
           if lat and lon:
-               st.success(f"✅ GPS Coordinates Detected: {lat:.6f}, {lon:.6f}")
+            st.success(f"✅ Auto-Detected GPS (EXIF): {lat:.6f}, {lon:.6f}")
           else:
-               st.warning("⚠️ No GPS data in photo. Use manual entry:")
-               with st.expander("Enter Coordinates Manually"):
-                    manual_lat = st.number_input("Latitude", format="%.6f", value=0.0)
-                    manual_lon = st.number_input("Longitude", format="%.6f", value=0.0)
-                    if manual_lat != 0.0 or manual_lon != 0.0:
-                         lat, lon = manual_lat, manual_lon
-                         st.info(f"📍 Using manual coordinates: ({lat}, {lon})")
+               # --- Step 2: Try to get Stamped GPS (OCR) ---
+               with st.spinner("No EXIF GPS found. Checking for stamped coordinates (OCR)..."):
+                    lat, lon = get_gps_from_stamp(primary_temp_path)
+               
+               if lat and lon:
+                    st.success(f"✅ Auto-Detected GPS (Stamp): {lat:.6f}, {lon:.6f}")
+               else:
+                    # --- Step 3: Fallback to Manual ---
+                    st.warning("⚠️ No auto-detection. Use manual entry:")
+                    with st.expander("Enter Coordinates Manually"):
+                         manual_lat = st.number_input("Latitude", format="%.6f", value=0.0)
+                         manual_lon = st.number_input("Longitude", format="%.6f", value=0.0)
+                         if manual_lat != 0.0 or manual_lon != 0.0:
+                              lat, lon = manual_lat, manual_lon
+                              st.info(f"📍 Using manual coordinates: ({lat}, {lon})")
 
           # --- "ANALYZE" BUTTON LOGIC (UPDATED) ---
           if st.button("🧠 Analyze Tree Health"):

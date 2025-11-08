@@ -28,17 +28,21 @@ def _get_exif_data(image_path):
 
 def _convert_to_decimal(value):
      """Internal helper to convert GPS tuples to decimal."""
-     # EXIF stores GPS as ((Degrees, 1), (Minutes, 1), (Seconds, 1))
-     d = float(value[0][0]) / float(value[0][1])
-     m = float(value[1][0]) / float(value[1][1])
-     s = float(value[2][0]) / float(value[2][1])
-     
-     return d + (m / 60.0) + (s / 3600.0)
+     try:
+          # EXIF stores GPS as ((Degrees, 1), (Minutes, 1), (Seconds, 1))
+          d = float(value[0][0]) / float(value[0][1])
+          m = float(value[1][0]) / float(value[1][1])
+          s = float(value[2][0]) / float(value[2][1])
+          
+          return d + (m / 60.0) + (s / 3600.0)
+     except Exception:
+          # Handle potential malformed GPS data (e.g., just a float)
+          return float(value)
 
 def get_lat_lon(image_path):
      """
      The main function.
-     Extracts latitude and longitude from image.
+     Extracts latitude and longitude from image EXIF metadata.
      Returns (lat, lon) as decimals or (None, None) if not found.
      """
      gps_info = _get_exif_data(image_path)
