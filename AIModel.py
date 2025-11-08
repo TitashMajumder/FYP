@@ -19,7 +19,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-     'gemini-2.5-flash-live',
+     'gemini-2.5-flash',
      generation_config=generation_config
 )
 
@@ -127,7 +127,7 @@ def get_gps_from_stamp(image_path):
           
           # Use a new, simple model instance for this specific task
           ocr_model = genai.GenerativeModel(
-               'gemini-2.5-flash-live',
+               'gemini-2.5-flash',
                generation_config=ocr_config
           )
           
