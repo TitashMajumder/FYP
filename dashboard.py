@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 from streamlit_folium import st_folium
-import streamlit.components.v1 as components
+from streamlit_js_eval import get_geolocation
 from MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_reliability_label
 from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp
@@ -22,12 +22,6 @@ DB_REPORT_FILE = "tree_survey.db"
 
 # --- INITIALIZE THE DATABASE ---
 initialize_database(DB_REPORT_FILE)
-
-# --- DEFINE CUSTOM GEOLOCATION COMPONENT ---
-_component_func = components.declare_component(
-     "local_geolocation", # This name is internal
-     path=os.path.join(os.path.dirname(__file__), "location_component")
-)
 
 # --- CREATE TABS ---
 tab1, tab2, tab3 = st.tabs(["Field Survey", "🗺️ Map Visualizer", "📊 Summary"])
@@ -114,7 +108,7 @@ with tab1:
           
           # --- Step 2: Show "Get Live Location" button ---
           st.warning("Use your live location or enter coordinates manually.")
-          location_data = _component_func(key="geolocation")
+          location_data = get_geolocation()
           
           if location_data and 'coords' in location_data:
                new_lat = location_data['coords']['latitude']
