@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
-     <head>
-          <meta charset="UTF-8" />
-          <style>
-               body {
+<head>
+     <meta charset="UTF-8" />
+     <style>
+          body {
                font-family: "Source Sans Pro", sans-serif;
                margin: 0;
                padding: 0;
@@ -12,8 +12,9 @@
                align-items: center;
                height: 100vh;
                background-color: transparent;
-               }
-               button {
+          }
+
+          button {
                background-color: #FF4B4B;
                color: white;
                border: none;
@@ -22,90 +23,89 @@
                font-size: 1rem;
                font-weight: 400;
                cursor: pointer;
-               line-height: 1.6;
-               width: 100%;
-               transition: background-color 0.2s;
-               }
-               button:hover {
-               background-color: #FF3333;
-               }
-               button:active {
-               background-color: #CC2929;
-               }
-               button:disabled {
-               background-color: #FF4B4B80;
-               cursor: not-allowed;
-               }
-          </style>
-     </head>
-     <body>
-          <button id="geo-btn" onclick="getLocation()">📍 Get Live Location</button>
+          width: 100%;
+          transition: background-color 0.2s;
+     }
+     button:hover { background-color: #FF3333; }
+     button:active { background-color: #CC2929; }
+     button:disabled { background-color: #FF4B4B80; cursor: not-allowed; }
+</style>
+</head>
 
-          <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@^1.3.0/dist/streamlit.js"></script>
-          
-          <script>
-               const button = document.getElementById("geo-btn");
+<body>
+     <button id="geo-btn">📍 Get Live Location</button>
 
-               function getLocation() {
+     <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@^1.3.0/dist/streamlit.js"></script>
+     
+     <script>
+          document.addEventListener("DOMContentLoaded", () => {
+
+          const button = document.getElementById("geo-btn");
+
+          function getLocation() {
                button.disabled = true;
                button.innerHTML = "Locating...";
-               
+
+               // Safety fallback timer
+               setTimeout(() => {
+                    if (button.disabled) {
+                         button.disabled = false;
+                         button.innerHTML = "📍 Retry Location";
+                    }
+               }, 6000);
+
                if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(success, error, {
-                    enableHighAccuracy: true,
-                    timeout: 5000,
-                    maximumAge: 0
+                         enableHighAccuracy: true,
+                         timeout: 5000,
+                         maximumAge: 0
                     });
                } else {
-                    sendError("Geolocation is not supported by this browser.");
+                    sendError("Geolocation not supported.");
                }
-               }
+          }
 
-               function success(position) {
+          button.addEventListener("click", getLocation);
+
+          function success(position) {
                const data = {
                     coords: {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy
+                         latitude: position.coords.latitude,
+                         longitude: position.coords.longitude,
+                         accuracy: position.coords.accuracy
                     }
                };
-               // Send the data back to Streamlit
                Streamlit.setComponentValue(data);
+
                button.innerHTML = "📍 Location Found!";
                setTimeout(() => {
                     button.disabled = false;
                     button.innerHTML = "📍 Update Location";
-               }, 2000);
-               }
+               }, 1500);
+          }
 
-               function error(err) {
+          function error(err) {
                let msg = "Unknown error";
-               switch(err.code) {
-                    case err.PERMISSION_DENIED:
-                    msg = "User denied the request for Geolocation.";
-                    break;
-                    case err.POSITION_UNAVAILABLE:
-                    msg = "Location information is unavailable.";
-                    break;
-                    case err.TIMEOUT:
-                    msg = "The request to get user location timed out.";
-                    break;
-               }
+               if (err.code === err.PERMISSION_DENIED) msg = "Permission denied.";
+               else if (err.code === err.POSITION_UNAVAILABLE) msg = "Position unavailable.";
+               else if (err.code === err.TIMEOUT) msg = "Request timed out.";
+
                sendError(msg);
-               }
+          }
 
-               function sendError(msg) {
-               // Send the error message back to Streamlit
+          function sendError(msg) {
                Streamlit.setComponentValue({ error: msg });
-               button.innerHTML = "⚠️ Error";
                button.disabled = false;
+               button.innerHTML = "⚠️ Error";
                setTimeout(() => { button.innerHTML = "📍 Retry Location"; }, 2000);
-               }
+          }
 
-               // Initialize Streamlit component
-               Streamlit.setComponentReady();
-               // Set the height of the iFrame
-               Streamlit.setFrameHeight(50); 
-          </script>
+          // Streamlit Initialization
+          Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, () => {
+               Streamlit.setFrameHeight(50);
+          });
+          Streamlit.setComponentReady();
+     });
+     </script>
      </body>
 </html>
