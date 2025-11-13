@@ -7,13 +7,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 from streamlit_folium import st_folium
-import folium
-
-# --- 1. ADD THE GEOLOCATION IMPORT HERE ---
-from streamlit_js_eval import get_geolocation
-
-# --- Import all your custom modules ---
-# from AutoCoordinate import get_lat_lon # This is no longer used
+import streamlit.components.v1 as components
 from MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_reliability_label
 from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp
@@ -114,7 +108,7 @@ with tab1:
           
           # --- Step 2: Show "Get Live Location" button ---
           st.warning("Use your live location or enter coordinates manually.")
-          location_data = get_geolocation()
+          location_data = components()
           
           if location_data and 'coords' in location_data:
                new_lat = location_data['coords']['latitude']
