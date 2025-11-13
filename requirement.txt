@@ -15,3 +15,4 @@ streamlit-folium
 sqlite3
 sqlalchemy
 streamlit_geolocation
+streamlit_js_eval

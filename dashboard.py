@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 import folium
 
 # --- 1. ADD THE GEOLOCATION IMPORT HERE ---
-from streamlit_geolocation import streamlit_geolocation
+from streamlit_js_eval import get_geolocation
 
 # --- Import all your custom modules ---
 # from AutoCoordinate import get_lat_lon # This is no longer used
@@ -114,7 +114,7 @@ with tab1:
           
           # --- Step 2: Show "Get Live Location" button ---
           st.warning("Use your live location or enter coordinates manually.")
-          location_data = streamlit_geolocation()
+          location_data = get_geolocation()
           
           if location_data and 'coords' in location_data:
                new_lat = location_data['coords']['latitude']
