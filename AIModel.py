@@ -5,7 +5,7 @@ from PIL import Image
 import json
 import re
 from dotenv import load_dotenv
-
+from utils import sectionize_image  # (Or crop_and_encode, whatever you named it)
 # --- 1. CONFIGURE THE GEMINI API KEY ---
 load_dotenv()
 api_key = os.environ.get("GEMINI_API_KEY")
@@ -24,64 +24,95 @@ model = genai.GenerativeModel(
 )
 
 def analyze_tree_health(image_paths_list):
-     """
-     Analyzes a LIST of tree images, identifies EACH plant, and returns
-     a LIST of analysis objects and a single combined details string.
-     """
-     try:
-          image_objects = []
-          for path in image_paths_list:
-               image_objects.append(Image.open(path))
+    """
+    Analyzes images, asks Gemini for coordinates, crops the diseased part,
+    and returns the results with the cropped image string.
+    """
+    try:
+        image_objects = []
+        for path in image_paths_list:
+            image_objects.append(Image.open(path))
 
-          # --- 3. PROMPT UPDATED FOR MULTI-TREE ANALYSIS ---
-          prompt = (
-               "You are a plant disease expert. Analyze all of these images. "
-               "The images may contain one or MORE different plants/trees. "
-               "First, provide a brief overall summary of what you see. "
-               "Then, for EACH separate plant you can identify, provide a specific analysis. "
-               "After your summary, provide *only* a single JSON LIST formatted with ```json ... ```. "
-               "Each object in the list must contain 'tree_name', 'health_condition', 'confidence_percent', and 'brief_analysis'. "
-               "\n\n"
-               "For 'health_condition', use one of these: Healthy, Stressed, Diseased, or Critical."
-               "\n\n"
-               "Example Response Format:"
-               "I see two different plants: a Mango tree with potential disease and a healthy Hibiscus.\n"
-               "```json\n"
-               "[\n"
-               '  {"tree_name": "Mango Tree", "health_condition": "Diseased", "confidence_percent": 90, "brief_analysis": "Shows signs of anthracnose spots."},\n'
-               '  {"tree_name": "Hibiscus Plant", "health_condition": "Healthy", "confidence_percent": 98, "brief_analysis": "No visible signs of stress or disease."}\n'
-               "]\n"
-               "```"
-          )
+        # --- UPDATED PROMPT: ASKS FOR COORDINATES & IMAGE INDEX ---
+        prompt = (
+            "You are a plant disease expert. Analyze these images. "
+            "The images may contain one or MORE different plants/trees. "
+            "First, provide a brief overall summary. "
+            "Then, provide a JSON LIST. "
+            "For EACH plant, identify: 'tree_name', 'health_condition', 'confidence_percent', 'brief_analysis', "
+            "and crucially: 'image_index' (which image in the list, 0, 1, etc.) "
+            "and 'box_2d' (bounding box of the diseased area as [ymin, xmin, ymax, xmax] on a scale of 0-1000). "
+            "\n\n"
+            "Example JSON Item:"
+            "{"
+            "  'tree_name': 'Mango',"
+            "  'health_condition': 'Diseased',"
+            "  'confidence_percent': 90,"
+            "  'brief_analysis': 'Anthracnose spots visible.',"
+            "  'image_index': 0,"
+            "  'box_2d': [200, 350, 450, 600]" 
+            "}"
+        )
 
-          content_list = [prompt] + image_objects
-          
-          response = model.generate_content(content_list)
-          full_text = response.text.strip()
-          
-          # --- 4. PARSING LOGIC UPDATED FOR A LIST ---
-          # Look for a JSON list (starts with [ ends with ])
-          json_match = re.search(r"```json\n(\[.*?\])\n```", full_text, re.DOTALL | re.IGNORECASE)
-          
-          overall_details = "No detailed analysis provided."
-          results_list = [] # This will be our return value
+        content_list = [prompt] + image_objects
+        
+        response = model.generate_content(content_list)
+        full_text = response.text.strip()
+        
+        # --- PARSING ---
+        json_match = re.search(r"```json\n(\[.*?\])\n```", full_text, re.DOTALL | re.IGNORECASE)
+        
+        overall_details = "No detailed analysis provided."
+        results_list = [] 
 
-          if json_match:
-               json_string = json_match.group(1).strip()
-               results_list = json.loads(json_string)
-               overall_details = full_text.split("```json")[0].strip()
-          else:
-               # Fallback if no JSON list is found
-               overall_details = full_text
-               
-          # --- 5. RETURN VALUE UPDATED ---
-          return results_list, overall_details
+        if json_match:
+            json_string = json_match.group(1).strip()
+            raw_results = json.loads(json_string)
+            overall_details = full_text.split("```json")[0].strip()
+            
+            # --- LOOP THROUGH RESULTS TO CROP ---
+            for res in raw_results:
+                # 1. Get the Image Index (default to 0 if missing)
+                idx = res.get('image_index', 0)
+                
+                # Safety check: ensure index is valid
+                if idx < len(image_paths_list):
+                    current_img_path = image_paths_list[idx]
+                    current_img_obj = image_objects[idx]
+                    w_img, h_img = current_img_obj.size
+                    
+                    # 2. Get Coordinates (ymin, xmin, ymax, xmax) 0-1000 scale
+                    box = res.get('box_2d', None)
+                    
+                    if box and len(box) == 4:
+                        ymin, xmin, ymax, xmax = box
+                        
+                        # 3. Convert 0-1000 scale to Pixels
+                        # y = (ymin / 1000) * height
+                        pixel_y = int((ymin / 1000) * h_img)
+                        pixel_x = int((xmin / 1000) * w_img)
+                        pixel_h = int(((ymax - ymin) / 1000) * h_img)
+                        pixel_w = int(((xmax - xmin) / 1000) * w_img)
+                        
+                        # 4. CALL YOUR CROP FUNCTION
+                        # This generates the base64 string
+                        cropped_str = sectionize_image(current_img_path, pixel_x, pixel_y, pixel_w, pixel_h)
+                        
+                        # 5. Add to result object
+                        res['cropped_section'] = cropped_str
+                    else:
+                        res['cropped_section'] = None
+                
+                results_list.append(res)
+                
+        else:
+            overall_details = full_text
+            
+        return results_list, overall_details
 
-     except Exception as e:
-          print(f"❌ Error in Gemini analysis: {str(e)}")
-          # Return an empty list and the error message
-          return [], f"An error occurred: {str(e)}"
-
+    except Exception as e:
+        print(f"❌ Error in Gemini analysis: {str(e)}")
+        return [], f"An error occurred: {str(e)}"
 def get_treatment_plan(tree_name, health_condition, analysis_details):
      """
      Generates a treatment plan based on the AI's analysis.
