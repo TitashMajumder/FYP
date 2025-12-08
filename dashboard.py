@@ -5,7 +5,7 @@ import sqlite3
 import datetime
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw  # Added ImageDraw
 from streamlit_folium import st_folium
 from streamlit_js_eval import get_geolocation
 from MapVisualizer import create_health_map
@@ -23,7 +23,35 @@ DB_REPORT_FILE = "tree_survey.db"
 # --- 3. INITIALIZE THE DATABASE ---
 initialize_database(DB_REPORT_FILE)
 
-# --- 4.CREATE TABS ---
+# --- HELPER FUNCTION TO DRAW BOXES ---
+def draw_diagnosis_box(image_path, box_coords):
+     """
+     Draws a bounding box on the image based on Gemini 0-1000 scale coords.
+     """
+     try:
+          img = Image.open(image_path)
+          draw = ImageDraw.Draw(img)
+          width, height = img.size
+        
+          # Parse [ymin, xmin, ymax, xmax] from 0-1000 scale
+          if box_coords and len(box_coords) == 4:
+               ymin, xmin, ymax, xmax = box_coords
+            
+               # Convert to pixels
+               left = (xmin / 500) * width
+               top = (ymin / 500) * height
+               right = (xmax / 500) * width
+               bottom = (ymax / 500) * height
+            
+               # Draw Red Rectangle with thicker width
+               draw.rectangle([left, top, right, bottom], outline="red", width=8)
+            
+          return img
+     except Exception as e:
+          print(f"Drawing error: {e}")
+          return Image.open(image_path)
+
+# --- 4. CREATE TABS ---
 tab1, tab2, tab3 = st.tabs(["Field Survey", "🗺️ Map Visualizer", "📊 Summary"])
 
 # --- 4.A. TAB 1 (Field Survey) ---
@@ -85,6 +113,8 @@ with tab1:
                temp_file_paths.append(temp_file_path)
                image_captions.append(file_name)
                images_to_display.append(Image.open(uploaded_file))
+          
+          # Show thumbnails of uploaded images
           st.image(images_to_display, caption=image_captions, width=200)
 
           # --- 2. GPS LOGIC UPDATED ---
@@ -122,6 +152,7 @@ with tab1:
                     st.session_state.manual_lon = manual_lon
           if st.session_state.manual_lat != 0.0:
                st.info(f"📍 Using selected coordinates: ({st.session_state.manual_lat:.6f}, {st.session_state.manual_lon:.6f})")
+          
           if st.button("🧠 Analyze Tree Health"):
                with st.spinner("Analyzing all images..."):
                     results_list, overall_details = analyze_tree_health(temp_file_paths)
@@ -156,6 +187,8 @@ with tab1:
                          st.success(f"✅ Analysis complete! {saved_count} tree(s) identified and saved to report.")
                     else:
                          st.error(f"Failed to save any results to report.")
+     
+     # --- DISPLAY RESULTS ---
      if st.session_state.analysis_done:
           results_list = st.session_state.analysis_results_list
           overall_details = st.session_state.overall_details
@@ -166,26 +199,51 @@ with tab1:
                st.info("No individual plants were identified in this analysis.")
           else:
                st.subheader(f"Identified {len(results_list)} Plant(s)")
+               
                for i, res in enumerate(results_list):
                     tree_name = res.get('tree_name', 'Unknown')
                     health = res.get('health_condition', 'Unknown')
                     confidence = res.get('confidence_percent', 0)
                     reliability = get_fuzzy_reliability_label(confidence)
                     brief_analysis = res.get('brief_analysis', 'No details')
+                    
+                    # GET COORDINATES FOR THE BOX
+                    box_coords = res.get('diseased_area_box', None)
+                    
+                    # GET IMAGE INDEX
+                    img_idx = res.get('image_index', 0)
+                    # Safety check index
+                    if img_idx < len(temp_file_paths):
+                        img_path = temp_file_paths[img_idx]
+                    else:
+                        img_path = temp_file_paths[0]
+
                     with st.container(border=True):
                          st.subheader(f"Result {i+1}: {tree_name}")
-                         col1_res, col2_res, col3_res, col4_res = st.columns(4) 
-                         col1_res.metric("🌿 Tree Name", tree_name)
-                         col2_res.metric("🩺 Health", health)
-                         col3_res.metric("🎯 Confidence", f"{confidence}%")
-                         col4_res.metric("📊 Reliability", reliability)
-                         st.caption("Brief Analysis")
-                         st.markdown(brief_analysis)
-                         if st.button(f"👩‍⚕️ Get Treatment Plan for {tree_name}", key=f"treat_{i}"):
-                              with st.spinner(f"Generating plan for {tree_name}..."):
-                                   plan = get_treatment_plan(tree_name, health, brief_analysis)
-                                   st.subheader(f"Recommended Plan for {tree_name}")
-                                   st.markdown(plan)
+                         
+                         col_img, col_data = st.columns([1, 2])
+                         
+                         with col_img:
+                             # DRAW THE BOX IF COORDS EXIST
+                             if box_coords:
+                                 annotated_img = draw_diagnosis_box(img_path, box_coords)
+                                 st.image(annotated_img, caption=f"Visual Diagnosis: {health}", use_container_width=True)
+                             else:
+                                 st.image(img_path, caption="Original Image", use_container_width=True)
+
+                         with col_data:
+                             c1, c2, c3 = st.columns(3)
+                             c1.metric("🩺 Health", health)
+                             c2.metric("🎯 Confidence", f"{confidence}%")
+                             c3.metric("📊 Reliability", reliability)
+                             
+                             st.markdown(f"**Brief Analysis:** {brief_analysis}")
+                             
+                             if st.button(f"👩‍⚕️ Get Treatment Plan", key=f"treat_{i}"):
+                                  with st.spinner(f"Generating plan for {tree_name}..."):
+                                       plan = get_treatment_plan(tree_name, health, brief_analysis)
+                                       st.subheader(f"Recommended Plan for {tree_name}")
+                                       st.markdown(plan)
 
 # --- 4.B. TAB 2 (Map Visualizer) ---
 with tab2:
