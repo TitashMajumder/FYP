@@ -38,10 +38,10 @@ def draw_diagnosis_box(image_path, box_coords):
                ymin, xmin, ymax, xmax = box_coords
             
                # Convert to pixels
-               left = (xmin / 500) * width
-               top = (ymin / 500) * height
-               right = (xmax / 500) * width
-               bottom = (ymax / 500) * height
+               left = (xmin / 1000) * width
+               top = (ymin / 1000) * height
+               right = (xmax / 1000) * width
+               bottom = (ymax / 1000) * height
             
                # Draw Red Rectangle with thicker width
                draw.rectangle([left, top, right, bottom], outline="red", width=8)
@@ -217,7 +217,11 @@ with tab1:
                         img_path = temp_file_paths[img_idx]
                     else:
                         img_path = temp_file_paths[0]
-
+                    # DETERMINE BOX COLOR
+                    if health == "Healthy":
+                        box_color = "#00FF00" # Green
+                    else:
+                        box_color = "#FF0000" # Red
                     with st.container(border=True):
                          st.subheader(f"Result {i+1}: {tree_name}")
                          
@@ -226,10 +230,10 @@ with tab1:
                          with col_img:
                              # DRAW THE BOX IF COORDS EXIST
                              if box_coords:
-                                 annotated_img = draw_diagnosis_box(img_path, box_coords)
-                                 st.image(annotated_img, caption=f"Visual Diagnosis: {health}", use_container_width=True)
+                                 annotated_img = draw_diagnosis_box(img_path, box_coords, color=box_color)
+                                 st.image(annotated_img, caption=f"Visual Diagnosis: {health}", width=350)
                              else:
-                                 st.image(img_path, caption="Original Image", use_container_width=True)
+                                 st.image(img_path, caption="Original Image", width=350)
 
                          with col_data:
                              c1, c2, c3 = st.columns(3)
