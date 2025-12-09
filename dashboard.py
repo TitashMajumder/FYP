@@ -12,6 +12,7 @@ from MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_reliability_label
 from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp
 from ReportGenerator import initialize_database, save_analysis_to_db
+from init_db import init_training_db
 
 # --- 1. STREAMLIT DASHBOARD SETUP ---
 st.set_page_config(page_title="Tree Health Dashboard", layout="wide")
@@ -19,37 +20,101 @@ st.title("🌳 Tree Health Monitoring Dashboard")
 
 # --- 2. DEFINE THE DB FILE NAME ---
 DB_REPORT_FILE = "tree_survey.db"
+DB_TRAINING_FILE = "training_dataset.db"
 
 # --- 3. INITIALIZE THE DATABASE ---
 initialize_database(DB_REPORT_FILE)
+init_training_db()
 
-# --- HELPER FUNCTION TO DRAW BOXES ---
-def draw_diagnosis_box(image_path, box_coords):
+# --- HELPER: SAVE TO TRAINING DB ---
+def save_to_training_db(image_path, tree_name, health_condition):
+     """Saves the path and labels to the training dataset database."""
+     try:
+          if not image_path: return
+          conn = sqlite3.connect(DB_TRAINING_FILE)
+          cursor = conn.cursor()
+          timestamp = datetime.datetime.now().isoformat()
+          cursor.execute("INSERT INTO training_data (timestamp, image_path, label_tree_name, label_health_condition) VALUES (?, ?, ?, ?)", 
+                         (timestamp, image_path, tree_name, health_condition))
+          conn.commit()
+          conn.close()
+     except Exception as e:
+          print(f"Error saving to training DB: {e}")
+
+# --- HELPER: SAVE SEGMENTED IMAGE ---
+def save_segmented_image(original_image_path, box_coords, tree_name, timestamp_str):
      """
-     Draws a bounding box on the image based on Gemini 0-1000 scale coords.
+     Crops the image based on coords and saves it to 'segments' folder.
+     Returns the file path of the saved segment.
      """
      try:
-          img = Image.open(image_path)
-          draw = ImageDraw.Draw(img)
-          width, height = img.size
-        
-          # Parse [ymin, xmin, ymax, xmax] from 0-1000 scale
-          if box_coords and len(box_coords) == 4:
-               ymin, xmin, ymax, xmax = box_coords
-            
-               # Convert to pixels
-               left = (xmin / 1000) * width
-               top = (ymin / 1000) * height
-               right = (xmax / 1000) * width
-               bottom = (ymax / 1000) * height
-            
-               # Draw Red Rectangle with thicker width
-               draw.rectangle([left, top, right, bottom], outline="red", width=8)
-            
-          return img
+          # Validate coordinates
+          if not box_coords or len(box_coords) != 4:
+               return None
+               
+          img = Image.open(original_image_path)
+          w, h = img.size
+          ymin, xmin, ymax, xmax = box_coords
+          
+          # Convert 0-1000 scale to pixels
+          left = (xmin / 1000) * w
+          top = (ymin / 1000) * h
+          right = (xmax / 1000) * w
+          bottom = (ymax / 1000) * h
+          
+          # Crop the image
+          cropped_img = img.crop((left, top, right, bottom))
+          
+          # Create directory if it doesn't exist
+          save_dir = "segments"
+          os.makedirs(save_dir, exist_ok=True)
+          
+          # Create a safe filename: "Mango_20231209_120000.jpg"
+          clean_name = "".join(c for c in tree_name if c.isalnum() or c in (' ', '_')).strip().replace(' ', '_')
+          clean_time = timestamp_str.replace(':', '').replace('-', '').replace('.', '')
+          filename = f"{clean_name}_{clean_time}.jpg"
+          
+          file_path = os.path.join(save_dir, filename)
+          
+          # Save file
+          cropped_img.save(file_path)
+          return file_path
+          
      except Exception as e:
-          print(f"Drawing error: {e}")
-          return Image.open(image_path)
+          print(f"Error saving segment: {e}")
+          return None
+   
+# --- HELPER FUNCTION TO DRAW BOXES ---
+def draw_diagnosis_box(image_path, box_coords, color="red"):
+    """
+    Draws a bounding box on the image based on Gemini 0-1000 scale coords.
+    """
+    try:
+        img = Image.open(image_path)
+        # Convert to RGB to ensure drawing colors work correctly
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+            
+        draw = ImageDraw.Draw(img)
+        width, height = img.size
+        
+        # Parse [ymin, xmin, ymax, xmax] from 0-1000 scale
+        if box_coords and len(box_coords) == 4:
+            ymin, xmin, ymax, xmax = box_coords
+            
+            # Convert to pixels (Dividing by 1000 is CRITICAL)
+            left = (xmin / 1000) * width
+            top = (ymin / 1000) * height
+            right = (xmax / 1000) * width
+            bottom = (ymax / 1000) * height
+            
+            # Draw Rectangle with specified color
+            draw.rectangle([left, top, right, bottom], outline=color, width=8)
+            
+        return img
+    except Exception as e:
+        print(f"Drawing error: {e}")
+        return Image.open(image_path)
 
 # --- 4. CREATE TABS ---
 tab1, tab2, tab3 = st.tabs(["Field Survey", "🗺️ Map Visualizer", "📊 Summary"])
@@ -79,7 +144,8 @@ with tab1:
      col1, col2 = st.columns(2)
      with col1:
           st.markdown("### 📸 Take Photo(s)")
-          if st.button("Take Pictures to Upload", use_container_width=True, help="Click to activate or deactivate your camera"):
+          # Fixed width deprecation warning
+          if st.button("Take Pictures to Upload", width=200, help="Click to activate or deactivate your camera"):
                st.session_state.camera_active = not st.session_state.camera_active
      with col2:
           st.markdown("### 📁 Or Upload Files Manually")
@@ -114,7 +180,7 @@ with tab1:
                image_captions.append(file_name)
                images_to_display.append(Image.open(uploaded_file))
           
-          # Show thumbnails of uploaded images
+          # Show thumbnails of uploaded images (Fixed width)
           st.image(images_to_display, caption=image_captions, width=200)
 
           # --- 2. GPS LOGIC UPDATED ---
@@ -212,16 +278,17 @@ with tab1:
                     
                     # GET IMAGE INDEX
                     img_idx = res.get('image_index', 0)
-                    # Safety check index
                     if img_idx < len(temp_file_paths):
                         img_path = temp_file_paths[img_idx]
                     else:
                         img_path = temp_file_paths[0]
+                    
                     # DETERMINE BOX COLOR
                     if health == "Healthy":
                         box_color = "#00FF00" # Green
                     else:
                         box_color = "#FF0000" # Red
+
                     with st.container(border=True):
                          st.subheader(f"Result {i+1}: {tree_name}")
                          
@@ -230,7 +297,9 @@ with tab1:
                          with col_img:
                              # DRAW THE BOX IF COORDS EXIST
                              if box_coords:
+                                 # Pass box_color to the function
                                  annotated_img = draw_diagnosis_box(img_path, box_coords, color=box_color)
+                                 # Fixed width to 350px for smaller image
                                  st.image(annotated_img, caption=f"Visual Diagnosis: {health}", width=350)
                              else:
                                  st.image(img_path, caption="Original Image", width=350)
@@ -248,7 +317,7 @@ with tab1:
                                        plan = get_treatment_plan(tree_name, health, brief_analysis)
                                        st.subheader(f"Recommended Plan for {tree_name}")
                                        st.markdown(plan)
-
+                                       
 # --- 4.B. TAB 2 (Map Visualizer) ---
 with tab2:
      st.header("🗺️ Tree Health Map")
