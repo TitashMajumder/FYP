@@ -355,21 +355,26 @@ with tab1:
           st.session_state.geo_tried = True
 
           # Step A: Try OCR first
-          lat, lon = get_gps_from_stamp(st.session_state.temp_paths[0])
-          if lat and lon:
-               st.session_state.manual_lat = lat
-               st.session_state.manual_lon = lon
-               st.success("📍 GPS Found via Image Stamp!")
-               st.rerun()
+          if not st.session_state.geo_tried:
+             lat, lon = get_gps_from_stamp(st.session_state.temp_paths[0])
+             if lat and lon:
+                 st.session_state.manual_lat = lat
+                 st.session_state.manual_lon = lon
+                 st.session_state.geo_tried = True # Stop trying
+                 st.success("📍 GPS Found via Image Metadata!")
+                 st.rerun()
 
-          else:
-               # Step B: Try browser GPS once only
-               loc = get_geolocation()
-               if loc and 'coords' in loc:
-                    st.session_state.manual_lat = loc['coords']['latitude']
-                    st.session_state.manual_lon = loc['coords']['longitude']
-                    st.success("📍 GPS Found via Device!")
-                    st.rerun()
+        # Step B: Try Browser GPS if we still don't have coords
+        # Note: We do NOT put this inside 'if not geo_tried' because we need to wait for the rerun
+        if st.session_state.manual_lat == 0.0:
+             loc = get_geolocation() # Let this run on every pass until we get data
+             
+             if loc and 'coords' in loc:
+                 st.session_state.manual_lat = loc['coords']['latitude']
+                 st.session_state.manual_lon = loc['coords']['longitude']
+                 st.session_state.geo_tried = True
+                 st.success("📍 GPS Found via Device!")
+                 st.rerun()
 
         # Step C: Manual Entry (Expander opens if 0.0, otherwise collapsed)
         with st.expander("📍 Coordinates (Auto-detected or Manual)", expanded=(st.session_state.manual_lat == 0.0)):
