@@ -8,10 +8,11 @@ import sqlite3
 from streamlit_folium import st_folium
 from streamlit_js_eval import get_geolocation
 
-# --- IMPORT BACKEND MODULES ---
+# --- IMPORT BACKEND MODULES (Updated for Hybrid Fusion) ---
 from MapVisualizer import create_health_map
-from FuzzyLogic import get_fuzzy_reliability_label
-from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp
+# Importing the new hybrid fusion function
+from FuzzyLogic import get_fuzzy_hybrid_analysis 
+from AIModel import analyze_tree_health, get_treatment_plan, get_gps_from_stamp, load_custom_model_results 
 from ReportGenerator import initialize_database, save_analysis_to_db
 from init_db import init_training_db
 
@@ -35,12 +36,12 @@ st.markdown("""
     /* --- HEADINGS GAP FIX --- */
     h1 {
         color: #90EE90 !important;
-        padding-bottom: 1rem !important; /* Adjusted as requested */
-        margin-bottom: 0.5rem !important; /* Pulls the next element up */
+        padding-bottom: 1rem !important;
+        margin-bottom: 0.5rem !important;
     }
     h3 {
         color: #90EE90 !important;
-        padding-top: 0rem !important;    /* Removes top padding */
+        padding-top: 0rem !important;
     }
     h2 {
         color: #90EE90 !important;
@@ -71,7 +72,7 @@ st.markdown("""
     
     /* --- TAB STYLING --- */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 3px; /* Space between tabs */
+        gap: 3px;
         border-bottom: 2px solid #2E8B57;
     }
     .stTabs [data-baseweb="tab"] {
@@ -169,7 +170,7 @@ def save_segmented_image(original_image_path, box_coords, tree_name, timestamp_s
         return None
 
 def draw_diagnosis_box(image_path, box_coords, color="red"):
-    """Draws bounding box on image."""
+    """Draws bounding box on image, scaled from 0-1000 coordinates."""
     try:
         img = Image.open(image_path)
         if img.mode != "RGB": img = img.convert("RGB")
@@ -288,7 +289,7 @@ tab1, tab2 = st.tabs(["📸 Scanner", "🗺️ Map"])
 
 # --- TAB 1: SCANNER ---
 with tab1:
-    st.write("Upload an image or take a photo. Our system will identify the tree, detect diseases, and suggest cures.")
+    st.write("Upload an image or take a photo. Our hybrid system fuses custom CNN results with Gemini's detailed analysis for robust diagnosis.")
 
     # --- INPUT SECTION ---
     if 'camera_active' not in st.session_state: st.session_state.camera_active = False
@@ -313,7 +314,6 @@ with tab1:
         if st.button("📸 Toggle Camera", use_container_width=True):
             st.session_state.camera_active = not st.session_state.camera_active
     with col_upl:
-        # ADDED on_change callback here
         uploaded_files = st.file_uploader("📁 Upload Images", type=['jpg','png','jpeg'], accept_multiple_files=True, label_visibility="collapsed", on_change=clear_old_results)
 
     camera_image = None
@@ -365,9 +365,8 @@ with tab1:
                  st.rerun()
 
         # Step B: Try Browser GPS if we still don't have coords
-        # Note: We do NOT put this inside 'if not geo_tried' because we need to wait for the rerun
         if st.session_state.manual_lat == 0.0:
-             loc = get_geolocation() # Let this run on every pass until we get data
+             loc = get_geolocation()
              
              if loc and 'coords' in loc:
                  st.session_state.manual_lat = loc['coords']['latitude']
@@ -376,7 +375,7 @@ with tab1:
                  st.success("📍 GPS Found via Device!")
                  st.rerun()
 
-        # Step C: Manual Entry (Expander opens if 0.0, otherwise collapsed)
+        # Step C: Manual Entry 
         with st.expander("📍 Coordinates (Auto-detected or Manual)", expanded=(st.session_state.manual_lat == 0.0)):
             c1, c2 = st.columns(2)
             with c1:
@@ -390,39 +389,104 @@ with tab1:
         # 3. Analyze Button
         st.write("---")
         
-        # --- FIXED: SEPARATE PROCESSING FROM DISPLAY ---
-        
         # Only perform analysis if button is clicked
         if st.button("🔍 Analyze Health", type="primary", use_container_width=True):
             status_text = st.empty()
             
-            status_text.text("Analyzing...")
+            # 1. RUN CUSTOM CNN (Specialized, Binary Check - Only runs on the first image)
+            status_text.text("1/3: Custom CNN Analysis (Diseased/Healthy)...")
+            first_image_path = st.session_state.temp_paths[0]
+            cnn_health, cnn_confidence = load_custom_model_results(first_image_path) 
             
-            # --- CALL REAL AI MODEL ---
+            # 2. RUN GEMINI LLM (Contextual, Multi-species, Detailed Diagnosis)
+            status_text.text("2/3: Gemini Contextual Analysis (Species & Bounding Box)...")
             results, details = analyze_tree_health(st.session_state.temp_paths)
             
-            # STORE IN SESSION STATE (This fixes the vanishing issue)
-            st.session_state.analysis_results = results
+            # 3. CONSOLIDATE RESULTS AND APPLY FUZZY LOGIC (Decision Fusion)
+            status_text.text("3/3: Fusing Decisions & Calculating Reliability...")
+            final_results = []
+
+            if results:
+                for res in results:
+                    gemini_health = res.get("health_condition", "Unknown")
+                    gemini_confidence = res.get("confidence_percent", 0)
+                    
+                    # --- CONDITIONAL CNN DATA CHECK (Fix for Mismatch) ---
+                    img_idx = res.get('image_index', 0)
+                    
+                    if img_idx == 0:
+                        current_cnn_health = cnn_health
+                        current_cnn_confidence = cnn_confidence
+                    else:
+                        current_cnn_health = 'N/A'
+                        current_cnn_confidence = gemini_confidence 
+                    
+                    # --- HYBRID CONFIDENCE CALCULATION ---
+                    cnn_is_problem = current_cnn_health.lower() == "diseased"
+                    gemini_is_problem = gemini_health in ["Diseased", "Stressed"]
+
+                    if gemini_health == "Healthy":
+                        confidence_input = 20.0
+                    if current_cnn_health == 'N/A' or (cnn_is_problem == gemini_is_problem):
+                        confidence_input = max(current_cnn_confidence, gemini_confidence)
+                    else:
+                        confidence_input = gemini_confidence * 0.8
+                        
+                    
+                    # --- CRITICAL: ADD TRY/EXCEPT BLOCK HERE ---
+                    try:
+                        # Call the new hybrid function to get the final health decision and reliability
+                        final_health_status, reliability_label = get_fuzzy_hybrid_analysis(
+                            confidence_input, 
+                            gemini_health, 
+                            current_cnn_health
+                        )
+                        
+                        # Use the final calculated score for display
+                        comparison_confidence = confidence_input 
+
+                        # Augment the result dictionary
+                        res['custom_cnn_confidence'] = current_cnn_confidence
+                        res['custom_cnn_health'] = current_cnn_health.capitalize()
+                        res['combined_fuzzy_input'] = comparison_confidence
+                        res['reliability'] = reliability_label         
+                        res['health_condition'] = final_health_status 
+                        
+                    except Exception as e:
+                        print(f"FUZZY FUSION FAILED for {res.get('tree_name', 'Unknown')}: {e}")
+                        st.error(f"Analysis Error: Fuzzy Logic failed for {res.get('tree_name')}. Using raw Gemini data.")
+                        
+                        # Fallback: Use Gemini's result and assign a low reliability flag
+                        res['custom_cnn_confidence'] = current_cnn_confidence
+                        res['custom_cnn_health'] = current_cnn_health.capitalize()
+                        res['combined_fuzzy_input'] = gemini_confidence
+                        res['reliability'] = "Low (Fuzzy Error)"
+                        res['health_condition'] = gemini_health
+                    
+                    final_results.append(res) # Ensure result is appended regardless of fuzzy success
+                    
+            # STORE FINAL RESULTS in Session State
+            st.session_state.analysis_results = final_results
             st.session_state.analysis_details = details
+            status_text.text("Analysis Complete.")
             
-            status_text.text("Result & Segmented Image...")
-            
-            # Save to DB (Only once when button is clicked)
+            # Save to DB 
             timestamp = datetime.datetime.now().isoformat()
             saved_count = 0
             
-            if results:
-                for res in results:
+            if final_results:
+                for res in final_results:
                     name = res.get("tree_name", "Unknown")
                     health = res.get("health_condition", "Unknown")
-                    confidence = res.get("confidence_percent", 0)
-                    reliability = get_fuzzy_reliability_label(confidence)
+                    confidence = int(res.get("combined_fuzzy_input", 0))
+                    reliability = res.get("reliability")
                     desc = res.get("brief_analysis", "")
                     box = res.get("diseased_area_box")
                     
                     img_idx = res.get('image_index', 0)
                     current_img_path = st.session_state.temp_paths[img_idx] if img_idx < len(st.session_state.temp_paths) else st.session_state.temp_paths[0]
                     
+                    # Segmentation and Training DB saving
                     segment_path = save_segmented_image(current_img_path, box, name, timestamp)
                     if segment_path:
                         save_to_training_db(segment_path, name, health)
@@ -437,13 +501,12 @@ with tab1:
                         "longitude": st.session_state.manual_lon,
                         "details": desc,
                         "image_files": os.path.basename(current_img_path),
-                        "segment_path": segment_path  
+                        "segment_path": segment_path # The segment path is now correctly included
                     }
-                    save_analysis_to_db(DB_REPORT_FILE, data_to_save)
+                    save_analysis_to_db(DB_REPORT_FILE, data_to_save) # NOTE: DB schema must be updated
                     saved_count += 1
                 
         # --- DISPLAY RESULTS (Checking Session State) ---
-        # This block runs on every rerun, keeping results visible
         if st.session_state.analysis_results:
             st.subheader("📋 Analysis Results")
             results = st.session_state.analysis_results
@@ -455,13 +518,37 @@ with tab1:
             for i, res in enumerate(results):
                 name = res.get("tree_name", "Unknown")
                 health = res.get("health_condition", "Unknown")
-                confidence = res.get("confidence_percent", 0)
-                reliability = get_fuzzy_reliability_label(confidence)
+                confidence = res.get("combined_fuzzy_input", 0)
+                reliability = res.get("reliability")
+                custom_cnn_confidence = res.get('custom_cnn_confidence', 0)
+                custom_cnn_health = res.get('custom_cnn_health', 'N/A')
                 desc = res.get("brief_analysis", "")
                 box = res.get("diseased_area_box")
+                
                 if box and len(box) == 4:
-                    box = refine_box(box, shrink_ratio=0.18)
+                    ymin, xmin, ymax, xmax = box
+                    width = xmax - xmin
+                    height = ymax - ymin
+                    
+                    min_size = 100 
+                    
+                    if width > 50 and height > 50:
+                        box = refine_box(box, shrink_ratio=0.18) 
+                    elif width < min_size or height < min_size:
+                        center_x = (xmin + xmax) / 2
+                        center_y = (ymin + ymax) / 2
+                        
+                        xmin = center_x - (min_size / 2)
+                        xmax = center_x + (min_size / 2)
+                        ymin = center_y - (min_size / 2)
+                        ymax = center_y + (min_size / 2)
 
+                        box = [max(0, int(ymin)), max(0, int(xmin)), min(1000, int(ymax)), min(1000, int(xmax))]
+                    
+                    if box[0] >= box[2] or box[1] >= box[3]:
+                        box = None
+                else:
+                    box = None
                 
                 img_idx = res.get('image_index', 0)
                 if img_idx < len(st.session_state.temp_paths):
@@ -469,9 +556,13 @@ with tab1:
                 else:
                     current_img_path = st.session_state.temp_paths[0] if st.session_state.temp_paths else None
 
-                # --- DISPLAY CARD ---
-                color = (0, 255, 0) if health == "Healthy" else (255, 0, 0)
-
+                # --- DISPLAY CARD (3-Class Color Logic) ---
+                if health == "Healthy":
+                    color = "green"  # Use string colors for simplicity during debugging
+                elif health == "Stressed":
+                    color = "orange" 
+                else:
+                    color = "red" 
                 
                 with st.container():
                     st.markdown(f"### {i+1}. {name}")
@@ -479,6 +570,7 @@ with tab1:
                     
                     with col_img:
                         if current_img_path and os.path.exists(current_img_path):
+                            # We deliberately skip drawing the box to see the image and data
                             if box:
                                 annotated = draw_diagnosis_box(current_img_path, box, color)
                                 st.image(annotated, caption=f"Visual Diagnosis: {health}", use_container_width=True)
@@ -490,9 +582,9 @@ with tab1:
                     with col_info:
                         m1, m2, m3 = st.columns(3)
                         m1.metric("Health", health)
-                        m2.metric("Confidence", f"{confidence}%")
+                        m2.metric("Confidence", f"{confidence:.2f}%")
                         m3.metric("Reliability", reliability)
-                        
+                        st.caption(f"**Custom CNN Check:** {custom_cnn_health} ({custom_cnn_confidence:.2f}%)")
                         st.info(f"**Analysis:** {desc}")
                         
                         if st.button(f"💊 Get Cure for {name}", key=f"cure_btn_{i}_{name.replace(' ', '_')}"):

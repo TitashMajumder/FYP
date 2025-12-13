@@ -1,15 +1,67 @@
-# Python cache
-__pycache__/
+# ================================
 
-# Environment variables (Keeps your API key secret!)
+# Python Cache
+
+# ================================
+
+**pycache**/
+*.py[cod]
+
+# ================================
+
+# Virtual Environments
+
+# ================================
+
+venv/
 .env
 
-# Database (Keeps your private survey data off GitHub!)
+# ================================
+
+# ML Models & Weights (DO NOT COMMIT)
+
+# ================================
+
+*.h5
+*.keras
+*.onnx
+*.pt
+*.pth
+
+# ================================
+
+# Dataset / Labels
+
+# ================================
+
+class_labels_combined.json
+health_classifier/
+segments/
+temp/
+
+# ================================
+
+# Databases
+
+# ================================
+
 *.db
 *.sqlite3
 
-# Temporary image files
-temp/
+# ================================
 
-# IDE files
+# IDE / Editor Files
+
+# ================================
+
 .vscode/
+.idea/
+
+# ================================
+
+# OS Files
+
+# ================================
+
+.DS_Store
+Thumbs.db

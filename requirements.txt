@@ -1,5 +1,7 @@
-pillow
-pandas
+tensorFlow>=2.10.0
+numPy>=1.23.5
+pillow>=12.0.0
+pandas>=2.3.3
 folium
 reportlab
 streamlit
@@ -9,3 +11,5 @@ python-dotenv
 streamlit-folium
 streamlit_js_eval
 opencv-python
+networkx
+scipy
