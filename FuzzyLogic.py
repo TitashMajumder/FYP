@@ -1,7 +1,7 @@
 # File: FuzzyLogic.py (ADVANCED OVERHAUL)
-import numpy as np
-import skfuzzy as fuzz
-from skfuzzy import control as ctrl
+import numpy as np # type: ignore
+import skfuzzy as fuzz # type: ignore
+from skfuzzy import control as ctrl # type: ignore
 
 # --- 1. Define Antecedents (Inputs) ---
 # Input 1: The calculated hybrid confidence score (0-100)

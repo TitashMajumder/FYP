@@ -1,17 +1,17 @@
 # File: AIModel.py
-import google.generativeai as genai
+import google.generativeai as genai  # type: ignore
 import os
-from PIL import Image
+from PIL import Image # type: ignore
 import json
 import re
 import io
 import base64
-from dotenv import load_dotenv
-import numpy as np
-import tensorflow as tf
+from dotenv import load_dotenv # type: ignore
+import numpy as np # type: ignore
+import tensorflow as tf # type: ignore
 # Use the full path for imports to prevent ambiguity
-from tensorflow.keras.models import load_model 
-from tensorflow.keras.preprocessing.image import load_img, img_to_array 
+from tensorflow.keras.models import load_model  # type: ignore
+from tensorflow.keras.preprocessing.image import load_img, img_to_array  # type: ignore
 
 # Global paths for the custom model
 CUSTOM_MODEL_PATH = 'plantvillage_tuned_model.h5'

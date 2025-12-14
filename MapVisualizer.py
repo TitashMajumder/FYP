@@ -1,8 +1,8 @@
-import pandas as pd
-import folium
+import pandas as pd # type: ignore
+import folium # type: ignore
 import os
 import sqlite3
-from folium.plugins import MarkerCluster
+from folium.plugins import MarkerCluster # type: ignore
 
 def create_health_map(db_path):
      """
