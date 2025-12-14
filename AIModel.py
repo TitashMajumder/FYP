@@ -9,7 +9,6 @@ import base64
 from dotenv import load_dotenv # type: ignore
 import numpy as np # type: ignore
 import tensorflow as tf # type: ignore
-# Use the full path for imports to prevent ambiguity
 from tensorflow.keras.models import load_model  # type: ignore
 from tensorflow.keras.preprocessing.image import load_img, img_to_array  # type: ignore
 
@@ -60,7 +59,7 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
      # Fallback for Streamlit secrets (optional)
      try:
-          import streamlit as st
+          import streamlit as st # type: ignore
           api_key = st.secrets["GEMINI_API_KEY"]
      except:
           pass
