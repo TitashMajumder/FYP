@@ -53,19 +53,19 @@ def load_custom_model_results(image_path):
           # Fallback if the model is not found or fails to load
           return "Model Error", 0.0
 
-# --- 1. CONFIGURE THE GEMINI API KEY ---
+# --- 1. CONFIGURE THE model API KEY ---
 load_dotenv()
-api_key = os.environ.get("GEMINI_API_KEY")
+api_key = os.environ.get("model_API_KEY")
 if not api_key:
      # Fallback for Streamlit secrets (optional)
      try:
           import streamlit as st # type: ignore
-          api_key = st.secrets["GEMINI_API_KEY"]
+          api_key = st.secrets["model_API_KEY"]
      except:
           pass
 
 if not api_key:
-     raise ValueError("GEMINI_API_KEY not found. Make sure you have a .env file with the key.")
+     raise ValueError("model_API_KEY not found. Make sure you have a .env file with the key.")
 genai.configure(api_key=api_key)
 
 # --- 2. SET TEMPERATURE TO 0 ---
@@ -80,7 +80,7 @@ model = genai.GenerativeModel(
 
 def analyze_tree_health(image_paths_list):
      """
-     Analyzes images using Gemini, enforcing the 'Healthy', 'Stressed', or 'Diseased' output.
+     Analyzes images using model, enforcing the 'Healthy', 'Stressed', or 'Diseased' output.
      Uses robust JSON parsing.
      """
      try:
@@ -167,7 +167,7 @@ def analyze_tree_health(image_paths_list):
      # --- ROBUST PARSING END ---
 
      except Exception as e:
-          print(f"❌ Error in Gemini analysis: {str(e)}")
+          print(f" Error in model analysis: {str(e)}")
           return [], f"An error occurred: {str(e)}"
 
 def get_treatment_plan(tree_name, health_condition, analysis_details):
@@ -186,7 +186,7 @@ def get_treatment_plan(tree_name, health_condition, analysis_details):
 
 def get_gps_from_stamp(image_path):
      """
-     Uses Gemini OCR to extract GPS coordinates from image stamps.
+     Uses model OCR to extract GPS coordinates from image stamps.
      """
      try:
           img = Image.open(image_path)
@@ -195,7 +195,7 @@ def get_gps_from_stamp(image_path):
                "Return *only* JSON: {'lat': float, 'lon': float}. If none, return 'None'."
           )
           ocr_config = genai.GenerationConfig(temperature=0.0)
-          ocr_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=ocr_config)
+          ocr_model = genai.GenerativeModel('model-2.5-flash', generation_config=ocr_config)
           response = ocr_model.generate_content([prompt, img])
           text = response.text.strip().replace("```json", "").replace("```", "")
           
