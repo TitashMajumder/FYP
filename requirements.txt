@@ -3,13 +3,13 @@ NumPy==1.23.5
 SciPy
 Pillow
 Pandas
-folium
 reportlab
-streamlit
 google-generativeai
 scikit-fuzzy
 python-dotenv
-streamlit-folium
+streamlit==1.26.0
+folium==0.14.0
+streamlit-folium==0.15.0
 streamlit_js_eval
 opencv-python-headless==4.7.0.72
 networkx
