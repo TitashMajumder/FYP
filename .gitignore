@@ -1,67 +1,68 @@
-# ================================
-
-# Python Cache
-
-# ================================
-
+# Python Cache / Bytecode
+# =====================================================
 **pycache**/
 *.py[cod]
-
-# ================================
+*$py.class
 
 # Virtual Environments
-
-# ================================
-
+# =====================================================
+.venv/
 venv/
+env/
 .env
 
-# ================================
 
-# ML Models & Weights (DO NOT COMMIT)
-
-# ================================
-
+# Machine Learning Models & Weights (DO NOT COMMIT)
+# =====================================================
 *.h5
 *.keras
 *.onnx
 *.pt
 *.pth
+*.ckpt
+*.pb
 
-# ================================
+# ML Experiment / Training Artifacts
+# =====================================================
+keras_tuner_dir/
+tensorboard/
+runs/
+logs/
 
-# Dataset / Labels
-
-# ================================
-
-class_labels_combined.json
+# Datasets & Generated Data
+# =====================================================
 health_classifier/
 segments/
 temp/
-
-# ================================
+data/
+datasets/
+class_labels_combined.json
 
 # Databases
-
-# ================================
-
+# =====================================================
 *.db
 *.sqlite3
 
-# ================================
-
-# IDE / Editor Files
-
-# ================================
-
+# IDE / Editor Settings
+# =====================================================
 .vscode/
 .idea/
+*.code-workspace
 
-# ================================
+# Jupyter Notebook Checkpoints
+# =====================================================
+.ipynb_checkpoints/
 
-# OS Files
-
-# ================================
-
+# OS / System Files
+# =====================================================
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Docker / Dev Containers
+# =====================================================
+.devcontainer/
+
+# Logs
+# =====================================================
+*.log
