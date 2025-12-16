@@ -1,6 +1,5 @@
-TensorFlow>=2.10.0
-Keras>=2.10.0
-NumPy
+TensorFlow==2.10.0
+NumPy==1.23.5
 SciPy
 Pillow
 Pandas
@@ -12,5 +11,5 @@ scikit-fuzzy
 python-dotenv
 streamlit-folium
 streamlit_js_eval
-opencv-python
+opencv-python-headless==4.7.0.72
 networkx
