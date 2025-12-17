@@ -46,37 +46,42 @@ final_health['diseased'] = fuzz.trimf(final_health.universe, [70, 90, 100])
 
 # --- 4. Define the RULES (Advanced & Corrected Logic) ---
 
-# --- Rule Set 1: Final Health Status (Remains the same as previous advanced fix) ---
-rule1 = ctrl.Rule(model_status['healthy'] & consensus['high'] & confidence['high'], final_health['healthy'])
-rule2 = ctrl.Rule(model_status['healthy'] & consensus['low'], final_health['healthy']) 
-rule3 = ctrl.Rule(model_status['healthy'] & confidence['low'], final_health['healthy']) 
-rule4 = ctrl.Rule(model_status['stressed'] & consensus['high'] & confidence['high'], final_health['diseased']) 
-rule5 = ctrl.Rule(model_status['stressed'] & consensus['medium'], final_health['stressed']) 
-rule6 = ctrl.Rule(model_status['stressed'] & consensus['low'], final_health['healthy']) 
-rule7 = ctrl.Rule(model_status['diseased'] & consensus['high'], final_health['diseased']) 
-rule8 = ctrl.Rule(model_status['diseased'] & consensus['low'], final_health['stressed']) 
+# --- 4. Define the RULES (REPAIRED FOR COMPLETENESS) ---
+
+# --- Rule Set 1: Final Health Status ---
+# Ensure every model_status is covered across the confidence/consensus spectrum
+rule1 = ctrl.Rule(model_status['healthy'] & consensus['high'], final_health['healthy'])
+rule2 = ctrl.Rule(model_status['healthy'] & consensus['low'], final_health['healthy'])
+rule3 = ctrl.Rule(model_status['healthy'] & consensus['medium'], final_health['healthy'])
+
+# Stressed logic: High confidence/consensus pushes it to Diseased, otherwise stays Stressed or Healthy
+rule4 = ctrl.Rule(model_status['stressed'] & consensus['high'] & confidence['high'], final_health['diseased'])
+rule5 = ctrl.Rule(model_status['stressed'] & (consensus['medium'] | consensus['high']), final_health['stressed'])
+rule6 = ctrl.Rule(model_status['stressed'] & consensus['low'], final_health['healthy'])
+
+# Diseased logic: Robustly handles all confidence levels
+rule7 = ctrl.Rule(model_status['diseased'] & (consensus['high'] | consensus['medium']), final_health['diseased'])
+rule8 = ctrl.Rule(model_status['diseased'] & consensus['low'], final_health['stressed'])
 
 
-# --- Rule Set 2: Reliability (OVERHAUL TO FIX LOW RELIABILITY ON HEALTHY) ---
+# --- Rule Set 2: Reliability ---
+# Healthy Reliability
+rule9 = ctrl.Rule(model_status['healthy'] & consensus['high'], reliability['high'])
+rule10 = ctrl.Rule(model_status['healthy'] & consensus['low'], reliability['medium'])
+rule11 = ctrl.Rule(model_status['healthy'] & consensus['medium'], reliability['medium'])
 
-# R9: If the status is HEALTHY (model_status is low) and consensus is high, reliability must be HIGH.
-rule9 = ctrl.Rule(model_status['healthy'] & consensus['high'], reliability['high']) 
+# Stressed Reliability
+rule12 = ctrl.Rule(model_status['stressed'], reliability['medium'])
 
-# R10: If the status is HEALTHY but consensus is low (CNN disagrees), reliability is MEDIUM (cautious).
-rule10 = ctrl.Rule(model_status['healthy'] & consensus['low'], reliability['medium']) 
+# Diseased Reliability - NOW COVERS MEDIUM CONFIDENCE
+rule13 = ctrl.Rule(model_status['diseased'] & confidence['high'], reliability['high'])
+rule14 = ctrl.Rule(model_status['diseased'] & confidence['medium'], reliability['medium'])
+rule15 = ctrl.Rule(model_status['diseased'] & confidence['low'], reliability['low'])
 
-# R11: If the status is STRESSED (intermediate uncertainty), reliability is MEDIUM.
-rule11 = ctrl.Rule(model_status['stressed'], reliability['medium'])
-
-# R12: If the status is DISEASED, reliability is HIGH only if confidence is also high.
-rule12 = ctrl.Rule(model_status['diseased'] & confidence['high'], reliability['high'])
-rule13 = ctrl.Rule(model_status['diseased'] & confidence['low'], reliability['low']) 
-
-
-# --- 5. Create and Simulate the System ---
+# Update the Control System with new rules
 hybrid_ctrl = ctrl.ControlSystem([
-     rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, # Health rules
-     rule9, rule10, rule11, rule12, rule13 # NEW RELIABILITY RULES
+     rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8,
+     rule9, rule10, rule11, rule12, rule13, rule14, rule15
 ])
 hybrid_sim = ctrl.ControlSystemSimulation(hybrid_ctrl)
 
@@ -88,13 +93,16 @@ def get_fuzzy_hybrid_analysis(confidence_score, model_health_label, cnn_health_l
      """
      
      # 1. Calculate Consensus Score (0-100)
-     model_is_problem = model_health_label in ["Diseased", "Stressed"]
-     cnn_is_problem = cnn_health_label.lower() == "diseased"
-     
-     if (model_is_problem == cnn_is_problem):
-          consensus_score = 100.0
+     if model_health_label == "Diseased":
+          # CNN matters only for disease confirmation
+          consensus_score = 100.0 if cnn_health_label.lower() == "diseased" else 40.0
+     elif model_health_label == "Stressed":
+          # CNN CANNOT disagree with stress
+          consensus_score = 70.0
      else:
-          consensus_score = 0.0
+          # Healthy case
+          consensus_score = 100.0 if cnn_health_label.lower() != "diseased" else 30.0
+
 
      # 2. Map model Health to a Numerical Score (for decision input)
      if model_health_label == "Diseased":

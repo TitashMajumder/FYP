@@ -15,7 +15,7 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array  # type:
 # Global paths for the custom model
 CUSTOM_MODEL_PATH = 'plantvillage_tuned_model.h5'
 IMAGE_SIZE = 128 
-
+   
 # --- Custom Model Prediction Function ---
 def load_custom_model_results(image_path):
      """
@@ -86,27 +86,43 @@ def analyze_tree_health(image_paths_list):
      try:
           image_objects = [Image.open(path) for path in image_paths_list]
 
-          # --- PROMPT ---
+          # --- REFINED PROMPT FOR AIMODEL.PY ---
           prompt = (
-               "You are a plant disease expert. Analyze these images. "
-               "The images may contain one or MORE different plants/trees. "
-               "First, provide a brief overall summary. "
-               "Then, provide a JSON LIST. "
-               "For EACH DISTINCT plant, identify: 'tree_name', "
-               "'health_condition' (Must be exactly one of: 'Healthy', 'Stressed', or 'Diseased'). "
-               "Use 'Stressed' for issues caused by abiotic factors (water, light, nutrients) or very early, mild infections. "
-               "PRIORITY RULE: If the analysis mentions nutrient deficiency, water stress, or environmental stress, you MUST output 'Stressed' for the health_condition, even if the image could suggest disease."
-               "'confidence_percent', 'brief_analysis', "
-               "and crucially: 'image_index' (0, 1, etc.) "
-               "and 'diseased_area_box' (bounding box of the diseased area as [ymin, xmin, ymax, xmax] on a scale of 0-1000). "
-               "\n\n"
-               "BOXING RULES:"
-               "- If the plant is HEALTHY: The box must cover the ENTIRE TREE/PLANT, with coordinates close to [0, 0, 1000, 1000]."
-               "- If the plant is DISEASED OR STRESSED: The box must cover ONLY the specific affected area (e.g., spot, patch of chlorosis)."
-               "\n\n"
-               "IMPORTANT: Do not list the same plant multiple times. Identify each distinct plant exactly once per image."
-               "\n\n"
-               "Example JSON Item: {'tree_name': 'Mango', 'health_condition': 'Diseased', 'confidence_percent': 90, 'brief_analysis': 'Anthracnose spots visible.', 'image_index': 0, 'diseased_area_box': [200, 350, 450, 600]}"
+          "You are a plant care and forestry expert. Carefully analyze the provided images. "
+          "Focus your inspection on: 1. Leaf health (diseases, spots), 2. Trunk integrity (wounds, "
+          "bark loss, mechanical injury, cracks), and 3. Soil conditions (dryness, mold, erosion).\n\n"
+
+          "### HEALTH CATEGORY RULES (STRICT ADHERENCE REQUIRED):\n"
+          "- 'Healthy': USE ONLY if the plant shows ABSOLUTELY NO signs of damage, wounds, or disease. "
+          "If you see a single crack in the trunk or a dry patch of soil, it is NOT 'Healthy'.\n"
+          "- 'Stressed': USE for any abiotic issues: mechanical trunk wounds, bark loss, nutrient deficiency, "
+          "or water stress. Mechanical damage is a form of stress.\n"
+          "- 'Diseased': USE ONLY for biological infections like fungi, rot, mold, or pests.\n\n"
+
+          "### PRIORITY LOGIC:\n"
+          "- If you describe trunk damage, wounds, or missing bark, you MUST set health_condition to 'Diseased'.\n"
+          "- NEVER label a wounded tree as 'Healthy'. Failure to follow this rule is a diagnostic error.\n"
+          "- If both stress and disease are present, prioritize 'Diseased'.\n\n"
+
+          "### OUTPUT FORMAT:\n"
+          "1. Provide a 2-3 line summary of your visual findings.\n"
+          "2. Provide a JSON LIST wrapped in a markdown code block (```json ... ```).\n"
+          "Each object in the list MUST include:\n"
+          "- 'tree_name': Identified species.\n"
+          "- 'health_condition': ('Healthy' | 'Stressed' | 'Diseased').\n"
+          "- 'confidence_percent': (integer 0-100).\n"
+          "- 'brief_analysis': (string) 1-2 sentences explaining the diagnosis.\n"
+          "- 'image_index': (integer correlating to the provided images).\n"
+          "- 'diseased_area_box': [ymin, xmin, ymax, xmax] (integers 0-1000)"
+          
+          "### BOXING RULES:"
+          "- If the plant is HEALTHY: You MUST return exactly [0, 0, 1000, 1000]. This is mandatory."
+          "- If the plant is DISEASED OR STRESSED: Box ONLY the specific affected area (wound, spot, etc.)."
+          "- 'treatment_plan': (array of 3-5 strings) Step-by-step recovery actions.\n\n"
+
+          "### IMPORTANT:\n"
+          "- Identify each unique plant exactly once per image.\n"
+          "- Ensure 'treatment_plan' addresses specific trunk wounds if 'Stressed' is selected for damage."
           )
 
           content_list = [prompt] + image_objects
@@ -155,6 +171,10 @@ def analyze_tree_health(image_paths_list):
                               if not (isinstance(box, (list, tuple)) and len(box) == 4): 
                                    res['diseased_area_box'] = None
 
+                              treatment = res.get("treatment_plan", [])
+                              if not isinstance(treatment, list):
+                                   res["treatment_plan"] = []
+                                   
                               results_list.append(res)
                     
                except json.JSONDecodeError as e:
@@ -165,24 +185,10 @@ def analyze_tree_health(image_paths_list):
                
           return results_list, overall_details
      # --- ROBUST PARSING END ---
-
      except Exception as e:
           print(f" Error in model analysis: {str(e)}")
           return [], f"An error occurred: {str(e)}"
 
-def get_treatment_plan(tree_name, health_condition, analysis_details):
-     """
-     Generates a treatment plan based on the AI's analysis.
-     """
-     try:
-          prompt = f"""
-          You are a plant care expert. Tree: {tree_name}, Condition: {health_condition}, Details: {analysis_details}.
-          Provide a simple, actionable, step-by-step treatment plan in markdown bullet points.
-          """
-          response = model.generate_content(prompt)
-          return response.text.strip()
-     except Exception as e:
-          return "Error: Could not generate treatment plan."
 
 def get_gps_from_stamp(image_path):
      """
@@ -195,7 +201,7 @@ def get_gps_from_stamp(image_path):
                "Return *only* JSON: {'lat': float, 'lon': float}. If none, return 'None'."
           )
           ocr_config = genai.GenerationConfig(temperature=0.0)
-          ocr_model = genai.GenerativeModel('model-2.5-flash', generation_config=ocr_config)
+          ocr_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=ocr_config)
           response = ocr_model.generate_content([prompt, img])
           text = response.text.strip().replace("```json", "").replace("```", "")
           

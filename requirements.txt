@@ -18,3 +18,4 @@ reportlab
 scikit-fuzzy
 python-dotenv
 google-generativeai
+fpdf
