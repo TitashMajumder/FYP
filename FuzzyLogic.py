@@ -103,7 +103,6 @@ def get_fuzzy_hybrid_analysis(confidence_score, model_health_label, cnn_health_l
           # Healthy case
           consensus_score = 100.0 if cnn_health_label.lower() != "diseased" else 30.0
 
-
      # 2. Map model Health to a Numerical Score (for decision input)
      if model_health_label == "Diseased":
           model_status_score = 90
