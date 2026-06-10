@@ -5,6 +5,7 @@ import time
 from PIL import Image # type: ignore
 import json
 import re
+import streamlit as st
 from dotenv import load_dotenv # type: ignore
 import numpy as np # type: ignore
 import tensorflow as tf # type: ignore
@@ -17,13 +18,12 @@ IMAGE_SIZE = 128
    
 # --- Custom Model Prediction Function ---
 
-_custom_model = None
+@st.cache_resource
 def get_custom_model():
-     global _custom_model
-     if _custom_model is None:
-          with tf.device('/CPU:0'):
-               _custom_model = load_model(CUSTOM_MODEL_PATH, compile=False)
-     return _custom_model
+     import tensorflow as tf  # type: ignore
+     from tensorflow.keras.models import load_model  # type: ignore
+     with tf.device('/CPU:0'):  # Streamlit cloud doesn't have GPUs
+          return load_model(CUSTOM_MODEL_PATH, compile=False)
 
 _class_labels = None
 def get_class_labels():
