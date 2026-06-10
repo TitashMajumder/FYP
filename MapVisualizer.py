@@ -2,6 +2,7 @@ import pandas as pd # type: ignore
 import folium # type: ignore
 import os
 import sqlite3
+import html
 from folium.plugins import MarkerCluster # type: ignore
 
 def create_health_map(db_path):
@@ -37,8 +38,7 @@ def create_health_map(db_path):
      color_map = {
           "Healthy": "green",
           "Stressed": "orange",
-          "Diseased": "red",
-          "Critical": "darkred"
+          "Diseased": "red"
      }
 
      for _, row in df_gps.iterrows():
@@ -51,7 +51,7 @@ def create_health_map(db_path):
           <b>Confidence:</b> {row['confidence']}%<br>
           <b>Timestamp:</b> {row['timestamp']}<br>
           <hr>
-          <b>Details:</b> {row['details']}
+          <b>Details:</b> {html.escape(str(row.get('details', '')))}
           """
           popup = folium.Popup(popup_html, max_width=300)
           

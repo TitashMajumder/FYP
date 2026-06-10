@@ -1,11 +1,10 @@
 # File: AIModel.py
 import google.generativeai as genai  # type: ignore
 import os
+import time
 from PIL import Image # type: ignore
 import json
 import re
-import io
-import base64
 from dotenv import load_dotenv # type: ignore
 import numpy as np # type: ignore
 import tensorflow as tf # type: ignore
@@ -17,21 +16,42 @@ CUSTOM_MODEL_PATH = 'plantvillage_tuned_model.h5'
 IMAGE_SIZE = 128 
    
 # --- Custom Model Prediction Function ---
+
+_custom_model = None
+def get_custom_model():
+     global _custom_model
+     if _custom_model is None:
+          with tf.device('/CPU:0'):
+               _custom_model = load_model(CUSTOM_MODEL_PATH, compile=False)
+     return _custom_model
+
+_class_labels = None
+def get_class_labels():
+     global _class_labels
+     if _class_labels is None:
+          with open('class_labels_combined.json', 'r') as f:
+               _class_labels = {int(k): v for k, v in json.load(f).items()}
+     return _class_labels
+
+_optimal_threshold = None
+def get_optimal_threshold():
+     global _optimal_threshold
+     if _optimal_threshold is None:
+          try:
+               with open('optimal_threshold.json', 'r') as f:
+                    _optimal_threshold = json.load(f)["optimal_threshold"]
+          except Exception:
+               _optimal_threshold = 0.5  # safe default
+     return _optimal_threshold
+
 def load_custom_model_results(image_path):
      """
      Loads and preprocesses an image, then runs the custom CNN model prediction.
      Returns: (predicted_class_name, confidence_percent)
      """
      try:
-          # Load model onto the CPU for robust deployment
-          with tf.device('/CPU:0'):
-               model = load_model(CUSTOM_MODEL_PATH, compile=False) 
-               
-          # Load class labels saved from the notebook
-          with open('class_labels_combined.json', 'r') as f:
-               class_labels = json.load(f)
-               class_labels = {int(k): v for k, v in class_labels.items()}
-
+          cnn_model = get_custom_model()
+          
           # Preprocess the image
           img = load_img(image_path, target_size=(IMAGE_SIZE, IMAGE_SIZE))
           img_array = img_to_array(img)
@@ -39,13 +59,18 @@ def load_custom_model_results(image_path):
           img_array = img_array.astype('float32') / 255.0 # Rescale 
           
           # Predict (verbose=0 suppresses output)
-          prediction = model.predict(img_array, verbose=0)
+          prediction = cnn_model.predict(img_array, verbose=0)
           
           # Get the top prediction
-          predicted_index = np.argmax(prediction[0])
-          confidence = prediction[0][predicted_index]
-          predicted_class = class_labels.get(predicted_index, "Unknown")
-          
+          threshold = get_optimal_threshold()
+          healthy_prob = prediction[0][1]  # index 1 = healthy
+
+          if healthy_prob < threshold:
+               predicted_class = "Diseased"
+               confidence = 1.0 - healthy_prob
+          else:
+               predicted_class = "Healthy"
+               confidence = healthy_prob
           return predicted_class, float(confidence) * 100.0
           
      except Exception as e:
@@ -78,6 +103,12 @@ model = genai.GenerativeModel(
      generation_config=generation_config
 )
 
+def is_valid_box(box):
+     if not (isinstance(box, (list, tuple)) and len(box) == 4):
+          return False
+     ymin, xmin, ymax, xmax = box
+     return (0 <= ymin < ymax <= 1000) and (0 <= xmin < xmax <= 1000)
+
 def analyze_tree_health(image_paths_list):
      """
      Analyzes images using model, enforcing the 'Healthy', 'Stressed', or 'Diseased' output.
@@ -100,7 +131,7 @@ def analyze_tree_health(image_paths_list):
           "- 'Diseased': USE ONLY for biological infections like fungi, rot, mold, or pests.\n\n"
 
           "### PRIORITY LOGIC:\n"
-          "- If you describe trunk damage, wounds, or missing bark, you MUST set health_condition to 'Diseased'.\n"
+          "- If you describe trunk damage, wounds, or missing bark, you MUST set health_condition to 'Stressed'.\n"
           "- NEVER label a wounded tree as 'Healthy'. Failure to follow this rule is a diagnostic error.\n"
           "- If both stress and disease are present, prioritize 'Diseased'.\n\n"
 
@@ -113,11 +144,11 @@ def analyze_tree_health(image_paths_list):
           "- 'confidence_percent': (integer 0-100).\n"
           "- 'brief_analysis': (string) 1-2 sentences explaining the diagnosis.\n"
           "- 'image_index': (integer correlating to the provided images).\n"
-          "- 'diseased_area_box': [ymin, xmin, ymax, xmax] (integers 0-1000)"
+          "- 'diseased_area_box': [ymin, xmin, ymax, xmax] (integers 0-1000)\n\n"
           
-          "### BOXING RULES:"
-          "- If the plant is HEALTHY: You MUST return exactly [0, 0, 1000, 1000]. This is mandatory."
-          "- If the plant is DISEASED OR STRESSED: Box ONLY the specific affected area (wound, spot, etc.)."
+          "### BOXING RULES:\n"
+          "- If the plant is HEALTHY: You MUST return exactly [0, 0, 1000, 1000]. This is mandatory.\n"
+          "- If the plant is DISEASED OR STRESSED: Box ONLY the specific affected area (wound, spot, etc.).\n"
           "- 'treatment_plan': (array of 3-5 strings) Step-by-step recovery actions.\n\n"
 
           "### IMPORTANT:\n"
@@ -126,8 +157,16 @@ def analyze_tree_health(image_paths_list):
           )
 
           content_list = [prompt] + image_objects
-          
-          response = model.generate_content(content_list)
+          response = None
+          for attempt in range(3):
+               try:
+                    response = model.generate_content(content_list)
+                    break
+               except Exception as e:
+                    if attempt == 2:
+                         raise
+                    print(f"Gemini retry {attempt+1}/3: {e}")
+                    time.sleep(2)
           full_text = response.text.strip()
           
           # --- ROBUST JSON PARSING (FIXED) ---
@@ -148,7 +187,7 @@ def analyze_tree_health(image_paths_list):
                     try:
                          pre_text = full_text.split(json_string)[0].strip()
                          if len(pre_text) > 10: overall_details = pre_text
-                    except:
+                    except Exception:
                          pass
 
           if json_string:
@@ -168,7 +207,7 @@ def analyze_tree_health(image_paths_list):
                               seen_plants.add(tree_name)
                               
                               box = res.get('diseased_area_box', None)
-                              if not (isinstance(box, (list, tuple)) and len(box) == 4): 
+                              if not is_valid_box(box):
                                    res['diseased_area_box'] = None
 
                               treatment = res.get("treatment_plan", [])
@@ -198,15 +237,16 @@ def get_gps_from_stamp(image_path):
           img = Image.open(image_path)
           prompt = (
                "Analyze this image for any text stamped on it (GPS coordinates). "
-               "Return *only* JSON: {'lat': float, 'lon': float}. If none, return 'None'."
+               "Return *only* JSON: {\"lat\": float, \"lon\": float}. If none, return the word None."
           )
-          ocr_config = genai.GenerationConfig(temperature=0.0)
-          ocr_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=ocr_config)
+          ocr_config = {"temperature": 0.0}
+          ocr_model = genai.GenerativeModel('gemini-2.5-flash-lite', generation_config=ocr_config)
           response = ocr_model.generate_content([prompt, img])
           text = response.text.strip().replace("```json", "").replace("```", "")
           
           if "none" in text.lower() or "{" not in text: return None, None
           result_json = json.loads(text)
           return float(result_json.get("lat")), float(result_json.get("lon"))
-     except:
+     except Exception as e:
+          print(f"GPS extraction failed: {e}")
           return None, None

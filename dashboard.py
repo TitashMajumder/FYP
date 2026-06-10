@@ -6,8 +6,8 @@ import datetime
 import pandas as pd # type: ignore
 import sqlite3
 from fpdf import FPDF # type: ignore
-import io
 import hashlib
+import glob
 from streamlit_folium import st_folium # type: ignore
 from streamlit_js_eval import get_geolocation # type: ignore
 
@@ -106,43 +106,33 @@ DB_REPORT_FILE = "tree_survey.db"
 DB_TRAINING_FILE = "training_dataset.db"
 
 # Initialize DBs on app load
-initialize_database(DB_REPORT_FILE)
-init_training_db()
+@st.cache_resource
+def setup_databases():
+    initialize_database(DB_REPORT_FILE)
+    init_training_db()
+
+setup_databases()
 
 # --- HELPER FUNCTIONS ---
 def get_image_hash(image_path):
      with open(image_path, "rb") as f:
           return hashlib.md5(f.read()).hexdigest()
 
-def generate_training_label(health_condition):
-     conn = sqlite3.connect(DB_TRAINING_FILE)
-     cursor = conn.cursor()
-
-     prefix = "H" if health_condition == "Healthy" else \
-               "D" if health_condition == "Diseased" else "S"
-
-     cursor.execute(
-          "SELECT COUNT(*) FROM training_data WHERE label_health_condition LIKE ?",
-          (f"{prefix}-%",)
-     )
-     count = cursor.fetchone()[0] + 1
-     conn.close()
-
-     return f"{prefix}-{count}"
-
 def save_to_training_db(image_path, tree_name, health_condition):
      """Saves path and labels to training DB."""
+     conn = None
      try:
-          if not image_path: return
           conn = sqlite3.connect(DB_TRAINING_FILE)
           cursor = conn.cursor()
           timestamp = datetime.datetime.now().isoformat()
           cursor.execute("INSERT INTO training_data (timestamp, image_path, label_tree_name, label_health_condition) VALUES (?, ?, ?, ?)", 
                          (timestamp, image_path, tree_name, health_condition))
           conn.commit()
-          conn.close()
      except Exception as e:
           print(f"Error saving to training DB: {e}")
+     finally:
+          if conn:
+               conn.close()
 
 def refine_box(box, shrink_ratio=0.15):
      """
@@ -488,11 +478,18 @@ with tab1:
                     st.caption("⚠️ Could not auto-detect location. Please enter manually.")
 
           # 3. Analyze Button
-          st.write("---")
+          st.divider() 
         
           # Only perform analysis if button is clicked
           if st.button("🔍 Analyze Health", type="primary", use_container_width=True):
                st.session_state.critical_alerts = []
+               current_files = set(os.path.abspath(f) for f in st.session_state.temp_paths)
+               for old_file in glob.glob(os.path.join("temp", "scan_*.jpg")):
+                    if os.path.abspath(old_file) not in current_files:
+                         try:
+                              os.remove(old_file)
+                         except Exception:
+                              pass
                status_text = st.empty()
                
                # 1. RUN CUSTOM CNN (Specialized, Binary Check - Only runs on the first image)
@@ -516,6 +513,8 @@ with tab1:
                if results:
                     for res in results:
                          model_health = res.get("health_condition", "Unknown")
+                         if model_health not in ["Healthy", "Stressed", "Diseased"]:
+                              model_health = "Stressed"
                          model_confidence = res.get("confidence_percent", 0)
                          
                          # --- CONDITIONAL CNN DATA CHECK (Fix for Mismatch) ---
@@ -534,9 +533,10 @@ with tab1:
                          cnn_is_problem = current_cnn_health.lower() == "diseased"
                          model_is_problem = model_health in ["Diseased", "Stressed"]
 
+                         # FIX — use elif
                          if model_health == "Healthy":
                               confidence_input = 20.0
-                         if current_cnn_health == 'N/A' or (cnn_is_problem == model_is_problem):
+                         elif current_cnn_health == 'N/A' or (cnn_is_problem == model_is_problem):
                               confidence_input = max(current_cnn_confidence, model_confidence)
                          else:
                               confidence_input = model_confidence * 0.8
@@ -576,7 +576,8 @@ with tab1:
                # STORE FINAL RESULTS in Session State
                st.session_state.analysis_results = final_results
                st.session_state.analysis_details = details
-               status_text.text("Analysis Complete.")
+               time.sleep(1.5)
+               status_text.empty()
                
                # --- ALERT NOTIFICATION HERE ---
                for res in final_results:
@@ -612,15 +613,12 @@ with tab1:
 
                          # SAVE TO TRAINING DB ONLY AFTER FINAL DECISION
                          if health in ["Healthy", "Diseased", "Stressed"]:
-
-                              label = generate_training_label(health)
-
                               # Save full image for Healthy
                               if health == "Healthy":
                                    save_to_training_db(
                                         current_img_path,
                                         name,
-                                        label
+                                        health
                                    )
 
                               # Save cropped segment for Diseased / Stressed
@@ -629,7 +627,7 @@ with tab1:
                                         save_to_training_db(
                                              segment_path,
                                              name,
-                                             label
+                                             health
                                         )
 
                          data_to_save = {
@@ -649,6 +647,7 @@ with tab1:
                          saved_count += 1
 
                     st.session_state.results_saved = True
+                    st.toast(f"✅ {saved_count} result(s) saved successfully.")
      
           # --- DISPLAY RESULTS (Checking Session State) ---
           if "critical_alerts" in st.session_state and st.session_state.critical_alerts:
@@ -758,7 +757,7 @@ with st.sidebar.expander("📚 Recent Scans", expanded=True):
           conn = sqlite3.connect(DB_REPORT_FILE)
           try:
                recents = pd.read_sql("SELECT * FROM survey ORDER BY id DESC LIMIT 5", conn)
-          except:
+          except Exception:
                recents = pd.DataFrame()
           finally:
                conn.close()
