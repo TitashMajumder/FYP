@@ -13,7 +13,6 @@ conflict = ctrl.Antecedent(np.arange(0, 101, 1), 'conflict')
 conflict['none']   = fuzz.trapmf(conflict.universe, [0,  0,  20, 35])
 conflict['mild']   = fuzz.trimf(conflict.universe,  [25, 50, 70])
 conflict['severe'] = fuzz.trapmf(conflict.universe, [60, 80, 100, 100])
-# model's Initial Health Status Score (10=Healthy, 50=Stressed, 90=Diseased)
 model_status = ctrl.Antecedent(np.arange(0, 101, 1), 'model_status')
 
 # --- 2. Consequent (Output) ---
