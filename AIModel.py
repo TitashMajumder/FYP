@@ -13,7 +13,7 @@ from tensorflow.keras.models import load_model  # type: ignore
 from tensorflow.keras.preprocessing.image import load_img, img_to_array  # type: ignore
 
 # Global paths for the custom model
-CUSTOM_MODEL_PATH = 'plantvillage_tuned_model.h5'
+CUSTOM_MODEL_PATH = 'plantvillage_tuned_model copy.h5'
 IMAGE_SIZE = 128 
    
 # --- Custom Model Prediction Function ---
@@ -99,7 +99,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-     'Gemini 3 Flash Live',
+     'gemini-2.5-flash-lite',
      generation_config=generation_config
 )
 
