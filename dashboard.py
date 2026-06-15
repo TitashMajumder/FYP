@@ -331,7 +331,7 @@ def admin_dashboard():
 
 # --- Sidebar ---
 st.sidebar.title("🌿 Help the Greens")
-page = st.sidebar.selectbox("Navigation", ["🔍 User Scanner", "🔐 Admin Dashboard"])
+page = st.sidebar.radio("Navigation", ["🔍 User Scanner", "🔐 Admin Dashboard"], horizontal=False)
 
 # --- NEW: ABOUT SECTION ---
 with st.sidebar.expander("ℹ️ About", expanded=False):
