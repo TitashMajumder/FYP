@@ -99,7 +99,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-     'gemini-2.5-flash-lite',
+     'Gemini 3 Flash Live',
      generation_config=generation_config
 )
 
