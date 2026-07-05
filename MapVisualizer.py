@@ -46,10 +46,10 @@ def create_health_map(db_path):
           color = color_map.get(health, "gray")
           
           popup_html = f"""
-          <b>Tree Name:</b> {row['tree_name']}<br>
-          <b>Health:</b> {row['health']} (Reliability: {row['reliability']})<br>
-          <b>Confidence:</b> {row['confidence']}%<br>
-          <b>Timestamp:</b> {row['timestamp']}<br>
+          <b>Tree Name:</b> {html.escape(str(row['tree_name']))}<br>
+          <b>Health:</b> {html.escape(str(row['health']))} (Reliability: {html.escape(str(row['reliability']))})<br>
+          <b>Confidence:</b> {html.escape(str(row['confidence']))}%<br>
+          <b>Timestamp:</b> {html.escape(str(row['timestamp']))}<br>
           <hr>
           <b>Details:</b> {html.escape(str(row.get('details', '')))}
           """

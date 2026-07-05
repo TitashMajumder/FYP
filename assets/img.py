@@ -1,3 +1,4 @@
+import uuid
 import argparse
 from pathlib import Path
 
@@ -57,7 +58,7 @@ def main():
     # 1) rename to temporary unique names
     tmp_map = []
     for old, new in mappings:
-        tmp = old.with_name(old.name + ".renametmp")
+        tmp = old.with_name(old.name + f".{uuid.uuid4().hex[:8]}.renametmp")
         old.rename(tmp)
         tmp_map.append((tmp, new))
 

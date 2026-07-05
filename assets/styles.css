@@ -1,0 +1,242 @@
+/* === GLOBAL === */
+.stApp {
+    background: linear-gradient(135deg, #0e1117 0%, #102b1f 100%);
+    color: white;
+    font-family: 'Trebuchet MS', sans-serif;
+}
+
+.block-container {
+    padding-top: 2.5rem;
+    padding-bottom: 3rem;
+}
+
+/* === TYPOGRAPHY === */
+h1, h2, h3, h4, .section-heading {
+    color: #90EE90 !important;
+    font-weight: bold !important;
+}
+
+.section-heading {
+    font-size: 18px !important;
+    margin-top: 20px !important;
+    margin-bottom: 15px !important;
+    letter-spacing: 0.5px;
+}
+
+h1 {
+    padding-bottom: 1rem !important;
+    margin-bottom: .5rem !important;
+}
+
+h3 {
+    padding-top: 0 !important;
+}
+
+/* === BUTTONS === */
+.stButton > button,
+.stDownloadButton > button {
+    background: linear-gradient(135deg, #2E8B57 0%, #1e6d3b 100%) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: none !important;
+    transition: all 0.25s ease !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    padding: 12px 20px !important;
+    width: 100% !important;
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #3CB371 0%, #2E8B57 100%) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25) !important;
+}
+
+/* === METRICS === */
+div[data-testid="stMetric"] {
+    background: #14211e;
+    border-radius: 16px;
+    padding: 15px;
+    border: 1px solid rgba(255,255,255,.06);
+}
+
+div[data-testid="stMetricValue"] {
+    color: #90EE90;
+}
+
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-3px);
+    transition: .25s;
+}
+
+/* === TABS === */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 3px;
+    border-bottom: 2px solid #2E8B57;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: #1E3A2F;
+    color: #cfcfcf;
+    border-radius: 10px 10px 0 0;
+    padding: 12px 20px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+
+.stTabs [aria-selected="true"] {
+    background: #2E8B57 !important;
+    color: white !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    border-color: #90EE90;
+    color: #90EE90;
+}
+
+/* === CUSTOM CARDS === */
+.result-card {
+    background: rgba(23,35,45,.88);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 28px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    transition: .25s;
+}
+
+.result-card:hover {
+    transform: translateY(-4px);
+}
+
+.metric-card {
+    background: #152622;
+    border-radius: 15px;
+    padding: 18px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,.05);
+    height: 100%;
+}
+
+.metric-title {
+    color: #b9c2c9;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.metric-value {
+    color: #90EE90;
+    font-size: 30px;
+    font-weight: bold;
+}
+
+.analysis-card {
+    background: #12344d;
+    border-radius: 15px;
+    padding: 18px;
+    border-left: 5px solid #3CB371;
+    margin-top: 15px;
+}
+
+.feature-card {
+    padding: 25px; 
+    border-radius: 12px; 
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    height: 100%;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* === STATUS BADGES === */
+.status-healthy,
+.status-stressed,
+.status-diseased {
+    display: inline-block;
+    padding: 6px 18px;
+    border-radius: 999px;
+    font-weight: bold;
+}
+
+.status-healthy {
+    background: #15803d;
+    color: white;
+}
+
+.status-stressed {
+    background: #f59e0b;
+    color: black;
+}
+
+.status-diseased {
+    background: #dc2626;
+    color: white;
+}
+
+/* === IMAGES & MEDIA === */
+[data-testid='stImage'] img,
+.result-card img,
+.metric-card img {
+    border-radius: 12px;
+}
+
+/* === SIDEBAR === */
+section[data-testid="stSidebar"] {
+    background: #111827;
+}
+
+/* === MISCELLANEOUS === */
+details {
+    border-radius: 10px;
+}
+
+/* === STREAMLIT FILE UPLOADER COMPACT UNIFORMITY === */
+div[data-testid="stFileUploader"] {
+    margin-bottom: 0px !important;
+    padding: 0px !important;
+}
+
+div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] {
+    padding: 0px 16px !important;
+    min-height: 48px !important;
+    height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.2) !important;
+    transition: all 0.25s ease !important;
+}
+
+div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] small {
+    display: none !important;
+}
+
+div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] div {
+    margin: 0 !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: white !important;
+}
+
+div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"]:hover {
+    border-color: #90EE90 !important;
+    cursor: pointer;
+}
+
+.hidden-uploader {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}

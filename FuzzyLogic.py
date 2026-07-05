@@ -2,6 +2,7 @@
 import numpy as np # type: ignore
 import skfuzzy as fuzz # type: ignore
 from skfuzzy import control as ctrl # type: ignore
+import math  # Fix #12/#13: needed for NaN detection
 
 # --- 1. Antecedents (Inputs) ---
 # The calculated hybrid confidence score (0-100)
@@ -79,12 +80,27 @@ rule18 = ctrl.Rule(conflict['none']   & confidence['high'],   reliability['high'
 rule19 = ctrl.Rule(conflict['mild']   & confidence['low'],    reliability['low'])
 rule20 = ctrl.Rule(confidence['very_low'], reliability['low'])
 rule21 = ctrl.Rule(consensus['very_low'] & model_status['diseased'], final_health['stressed'])
+# Fix #5: model_status['healthy'] was never paired with consensus['very_low'].
+# This is exactly the "model says Healthy, CNN says Diseased" disagreement case
+# (CONSENSUS_MAP maps that combo to 15.0, deep in very_low territory) — without
+# these rules no antecedent fires, defuzzification errors out, and the code
+# falls back to blindly trusting the model's raw "Healthy" label, ignoring the
+# CNN's disagreement entirely. Route it to a cautious "Stressed" + low
+# reliability verdict instead, so the disagreement actually gets flagged.
+rule22 = ctrl.Rule(model_status['healthy'] & consensus['very_low'], final_health['stressed'])
+rule23 = ctrl.Rule(model_status['healthy'] & consensus['very_low'], reliability['low'])
 
 hybrid_ctrl = ctrl.ControlSystem([
      rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8, rule9, rule10, rule11,
-     rule12, rule13, rule14, rule15, rule16, rule17, rule18, rule19, rule20, rule21
+     rule12, rule13, rule14, rule15, rule16, rule17, rule18, rule19, rule20, rule21,
+     rule22, rule23
 ])
-hybrid_sim = ctrl.ControlSystemSimulation(hybrid_ctrl)
+# Fix #6: hybrid_sim used to be a single module-level ControlSystemSimulation
+# shared across every call. ControlSystemSimulation holds mutable input/output
+# state, so concurrent Streamlit sessions calling get_fuzzy_hybrid_analysis()
+# at the same time could race on each other's inputs/outputs. hybrid_ctrl
+# (the ControlSystem itself, built from the rules) is stateless and safe to
+# share; only the per-call simulation needs to be created fresh below.
 
 def get_fuzzy_hybrid_analysis(confidence_score, model_health_label, cnn_health_label):
      """
@@ -129,17 +145,25 @@ def get_fuzzy_hybrid_analysis(confidence_score, model_health_label, cnn_health_l
      else:
           model_status_score = 10
 
+     # Fix #12: clamp all inputs to valid universe range to avoid NaN defuzz
+     confidence_score = float(max(1.0, min(99.0, confidence_score)))
+     consensus_score  = float(max(1.0, min(99.0, consensus_score)))
+     model_status_score = float(max(1.0, min(99.0, model_status_score)))
+     conflict_score   = float(max(0.0, min(100.0, conflict_score)))
+     # Fix #6: per-call simulation instance, not a shared global
+     sim = ctrl.ControlSystemSimulation(hybrid_ctrl)
+
      # We now feed the simulation with the CONFIDENCE, CONSENSUS, AND model'S INITIAL STATUS
-     hybrid_sim.input['confidence'] = confidence_score
-     hybrid_sim.input['consensus'] = consensus_score
-     hybrid_sim.input['model_status'] = model_status_score
-     hybrid_sim.input['conflict']     = conflict_score
+     sim.input['confidence'] = confidence_score
+     sim.input['consensus'] = consensus_score
+     sim.input['model_status'] = model_status_score
+     sim.input['conflict']     = conflict_score
      try:
           # Run the calculation
-          hybrid_sim.compute()
+          sim.compute()
           # Get the final "crisp" output scores
-          final_health_score = hybrid_sim.output['final_health']
-          reliability_score = hybrid_sim.output['reliability']
+          final_health_score = sim.output['final_health']
+          reliability_score = sim.output['reliability']
           # Convert Reliability score (0-100) to High/Medium/Low
           if reliability_score > 70:
                reliability_label = "High"
@@ -157,14 +181,16 @@ def get_fuzzy_hybrid_analysis(confidence_score, model_health_label, cnn_health_l
           return final_health_label, reliability_label
      except Exception as e:
           print(f"Fuzzy logic error in hybrid decision: {e}")
-          # Validate outputs before using them
-          fh = hybrid_sim.output.get('final_health', None)
-          rl = hybrid_sim.output.get('reliability', None)
-          if fh is not None and 0 <= fh <= 100:
+          # Fix #13: validate outputs and guard against NaN
+          fh = sim.output.get('final_health', None)
+          rl = sim.output.get('reliability', None)
+          fh_valid = fh is not None and not math.isnan(fh) and 0 <= fh <= 100
+          rl_valid = rl is not None and not math.isnan(rl) and 0 <= rl <= 100
+          if fh_valid:
                final_health_label = "Diseased" if fh > 70 else "Stressed" if fh > 30 else "Healthy"
           else:
                final_health_label = model_health_label  # safe fallback
-          if rl is not None and 0 <= rl <= 100:
+          if rl_valid:
                reliability_label = "High" if rl > 70 else "Medium" if rl > 40 else "Low"
           else:
                reliability_label = "High (Fallback)" if confidence_score > 75 else "Medium (Fallback)"

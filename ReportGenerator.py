@@ -1,4 +1,5 @@
 import sqlite3
+from config import SURVEY_SCHEMA
 
 def initialize_database(db_path):
      """
@@ -8,21 +9,7 @@ def initialize_database(db_path):
      conn = sqlite3.connect(db_path)
      cursor = conn.cursor()
      # Define the table structure
-     cursor.execute("""
-     CREATE TABLE IF NOT EXISTS survey (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          timestamp TEXT NOT NULL,
-          tree_name TEXT,
-          health TEXT,
-          confidence INTEGER,
-          reliability TEXT,
-          latitude REAL,
-          longitude REAL,
-          details TEXT,
-          image_files TEXT,
-          segment_path TEXT
-     )
-     """)
+     cursor.execute(SURVEY_SCHEMA)
      conn.commit()
      conn.close()
 
@@ -65,4 +52,4 @@ def save_analysis_to_db(db_path, analysis_data):
           return False, f"Error: {e}"
      finally:
           if conn:
-               conn.close() 
+               conn.close()

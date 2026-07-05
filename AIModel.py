@@ -6,6 +6,8 @@ from PIL import Image # type: ignore
 import json
 import re
 import streamlit as st
+import matplotlib
+matplotlib.use('Agg')
 from dotenv import load_dotenv # type: ignore
 import numpy as np # type: ignore
 import tensorflow as tf # type: ignore
@@ -76,7 +78,7 @@ def load_custom_model_results(image_path):
      except Exception as e:
           print(f"❌ Custom Model Error: {e}")
           # Fallback if the model is not found or fails to load
-          return "Model Error", 0.0
+          return "Unknown", 0.0  # Fix #9: consistent unknown label instead of "Model Error"
 
 # --- 1. CONFIGURE THE model API KEY ---
 load_dotenv()
@@ -95,19 +97,29 @@ genai.configure(api_key=api_key)
 
 # --- 2. SET TEMPERATURE TO 0 ---
 generation_config = {
-     "temperature": 0.0, 
+    "temperature": 0.0,
+    "response_mime_type": "application/json"
 }
 
 model = genai.GenerativeModel(
-     'gemini-2.5-flash-lite',
-     generation_config=generation_config
+    "gemini-2.5-flash-lite",
+    generation_config=generation_config
 )
 
-def is_valid_box(box):
+def is_valid_box(box, health_condition=None):
+     """Validates a bounding box. Fix #11: full-image box [0,0,1000,1000] is
+     only acceptable for Healthy trees; for diseased/stressed it indicates
+     the model failed to localise the lesion and should be rejected."""
      if not (isinstance(box, (list, tuple)) and len(box) == 4):
           return False
      ymin, xmin, ymax, xmax = box
-     return (0 <= ymin < ymax <= 1000) and (0 <= xmin < xmax <= 1000)
+     if not ((0 <= ymin < ymax <= 1000) and (0 <= xmin < xmax <= 1000)):
+          return False
+     # Reject trivially full-image boxes for non-healthy trees
+     if health_condition and health_condition != 'Healthy':
+          if ymin == 0 and xmin == 0 and ymax == 1000 and xmax == 1000:
+               return False
+     return True
 
 def analyze_tree_health(image_paths_list):
      """
@@ -160,70 +172,58 @@ def analyze_tree_health(image_paths_list):
           response = None
           for attempt in range(3):
                try:
-                    response = model.generate_content(content_list)
+                    response = model.generate_content(
+                    content_list,
+                    generation_config={
+                         "temperature": 0.0,
+                         "response_mime_type": "application/json"
+                         }
+                    )
                     break
                except Exception as e:
                     if attempt == 2:
                          raise
-                    print(f"Gemini retry {attempt+1}/3: {e}")
+                    print(f"model retry {attempt+1}/3: {e}")
                     time.sleep(2)
-          full_text = response.text.strip()
           
-          # --- ROBUST JSON PARSING (FIXED) ---
-          json_match = re.search(r"```json\s*(\[.*?\])\s*```", full_text, re.DOTALL | re.IGNORECASE)
-          
-          json_string = None
-          overall_details = full_text.split("```json")[0].strip() if "```json" in full_text else full_text
           results_list = []
 
-          if json_match:
-               json_string = json_match.group(1).strip()
-          else:
-               # Fallback: Search for an array structure directly (Handles missing code fences)
-               array_match = re.search(r"(\[.*?\])", full_text, re.DOTALL)
-               if array_match:
-                    json_string = array_match.group(1).strip()
-                    # Try to separate overall details if array found
-                    try:
-                         pre_text = full_text.split(json_string)[0].strip()
-                         if len(pre_text) > 10: overall_details = pre_text
-                    except Exception:
-                         pass
+          try:
+               raw_results = json.loads(response.text)
 
-          if json_string:
-               # Clean up common LLM errors (e.g., single quotes, trailing commas)
-               json_string = json_string.replace("'", '"')
-               json_string = re.sub(r',\s*\]', ']', json_string)
-               
-               try:
-                    raw_results = json.loads(json_string)
-                    
-                    seen_plants = set()
-                    for res in raw_results:
-                         if isinstance(res, dict) and res.get('tree_name'):
-                              tree_name = res.get('tree_name', 'Unknown').strip().lower()
-                              
-                              if tree_name in seen_plants: continue
-                              seen_plants.add(tree_name)
-                              
-                              box = res.get('diseased_area_box', None)
-                              if not is_valid_box(box):
-                                   res['diseased_area_box'] = None
+               seen_plants = set()
 
-                              treatment = res.get("treatment_plan", [])
-                              if not isinstance(treatment, list):
-                                   res["treatment_plan"] = []
-                                   
-                              results_list.append(res)
-                    
-               except json.JSONDecodeError as e:
-                    overall_details = f"Error decoding FINAL JSON list: {e}\nRaw Text: {full_text}"
-                    
-          else:
-               overall_details = full_text
-               
-          return results_list, overall_details
-     # --- ROBUST PARSING END ---
+               for res in raw_results:
+
+                    if not isinstance(res, dict):
+                         continue
+
+                    tree_name = res.get("tree_name", "Unknown").strip().lower()
+                    img_idx = res.get("image_index", 0)
+
+                    dedup_key = (img_idx, tree_name)
+
+                    if dedup_key in seen_plants:
+                         continue
+
+                    seen_plants.add(dedup_key)
+
+                    box = res.get("diseased_area_box")
+
+                    if not is_valid_box(box, res.get("health_condition")):
+                         res["diseased_area_box"] = None
+
+                    if not isinstance(res.get("treatment_plan"), list):
+                         res["treatment_plan"] = []
+
+                    results_list.append(res)
+
+               return results_list, ""
+
+          except json.JSONDecodeError as e:
+
+               return [], f"Gemini returned invalid JSON:\n\n{e}\n\n{response.text}"
+                    # --- ROBUST PARSING END ---
      except Exception as e:
           print(f" Error in model analysis: {str(e)}")
           return [], f"An error occurred: {str(e)}"
@@ -250,3 +250,74 @@ def get_gps_from_stamp(image_path):
      except Exception as e:
           print(f"GPS extraction failed: {e}")
           return None, None
+
+def generate_disease_heatmap(image_path, model=None):
+     """
+     Generate Grad-CAM heatmap showing where CNN detects disease.
+     Returns the heatmap array overlaid on original image.
+     """
+     try:
+          if model is None:
+               model = get_custom_model()
+          
+          # Load and preprocess image
+          img = Image.open(image_path).convert('RGB')
+          original_img = np.array(img)
+          
+          img_resized = img.resize((IMAGE_SIZE, IMAGE_SIZE))
+          img_array = np.array(img_resized, dtype='float32') / 255.0
+          img_array = np.expand_dims(img_array, axis=0)
+          
+          # Get predictions
+          predictions = model.predict(img_array, verbose=0)
+          diseased_prob = predictions[0][0]  # index 0 = diseased
+          
+          # Fix #10: validate layer name exists before building gradient model
+          layer_names = [l.name for l in model.layers]
+          target_layer = 'conv2d_7'
+          if target_layer not in layer_names:
+               # Fall back to last Conv2D layer found
+               conv_layers = [l.name for l in model.layers if 'conv2d' in l.name]
+               if not conv_layers:
+                    print(f'No conv2d layers found in model. Available: {layer_names}')
+                    return None, 0.0
+               target_layer = conv_layers[-1]
+               print(f'Layer conv2d_7 not found; using {target_layer} instead')
+          # Build gradient model
+          grad_model = tf.keras.Model(
+               inputs=model.input,
+               outputs=[
+                    model.get_layer(name=target_layer).output,  # last conv layer
+                    model.output
+               ]
+          )
+          
+          # Compute gradients
+          with tf.GradientTape() as tape:
+               conv_outputs, preds = grad_model(img_array)
+               diseased_class_channel = preds[:, 0]
+          
+          grads = tape.gradient(diseased_class_channel, conv_outputs)
+          pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+          
+          # Generate heatmap
+          conv_outputs = conv_outputs[0]
+          heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+          heatmap = tf.squeeze(heatmap)
+          heatmap = tf.maximum(heatmap, 0) / (tf.math.reduce_max(heatmap) + 1e-5)
+          heatmap_resized = tf.image.resize(
+               tf.expand_dims(heatmap, 0), 
+               (IMAGE_SIZE, IMAGE_SIZE)
+          )[0].numpy()
+          
+          # Scale to original image size
+          heatmap_scaled = tf.image.resize(
+               tf.expand_dims(heatmap_resized, 0),
+               (original_img.shape[0], original_img.shape[1])
+          )[0].numpy()
+          
+          return heatmap_scaled, diseased_prob
+          
+     except Exception as e:
+          print(f"Grad-CAM error: {e}")
+          return None, 0.0
