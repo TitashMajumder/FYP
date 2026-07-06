@@ -1046,12 +1046,31 @@ with tab1:
                               if current_img_path and os.path.exists(current_img_path):
                                    # Generate heatmap ONCE for both display and PDF
                                    heatmap_img_for_pdf = None
-                                   if health in ["Diseased", "Stressed"]:
-                                        with st.spinner("Generating heatmap..."):
-                                             heatmap, diseased_prob = generate_disease_heatmap(current_img_path)
+                                   diseased_prob = 0.0
+
+                                   # Generate Grad-CAM when:
+                                   # 1. Final result is Diseased/Stressed
+                                   # 2. CNN detects disease
+                                   # 3. Reliability is Low because models may disagree
+
+                                   should_generate_heatmap = (
+                                        health in ["Diseased", "Stressed"]
+                                        or custom_cnn_health.lower() == "diseased"
+                                        or reliability == "Low"
+                                   )
+
+                                   if should_generate_heatmap:
+                                        with st.spinner("Generating severity heatmap..."):
+
+                                             heatmap, diseased_prob = generate_disease_heatmap(
+                                                  current_img_path
+                                             )
+
                                              if heatmap is not None:
-                                                  heatmap_img_for_pdf = overlay_heatmap_on_image(current_img_path, heatmap)
-                                   
+                                                  heatmap_img_for_pdf = overlay_heatmap_on_image(
+                                                       current_img_path,
+                                                       heatmap
+                                                  )
                                    # Display diagnosis box and heatmap SIDE BY SIDE
                                    img_col1, img_col2 = st.columns(2)
                                    
@@ -1067,9 +1086,16 @@ with tab1:
                               
                                    with img_col2:
                                         if heatmap_img_for_pdf is not None:
-                                             st.image(heatmap_img_for_pdf, caption=f"Severity ({diseased_prob*100:.1f}%)", width='stretch')
-                              else:
-                                   st.warning("Image not found")
+                                             st.image(
+                                                  heatmap_img_for_pdf,
+                                                  caption=f"CNN Disease Activation ({diseased_prob*100:.1f}%)",
+                                                  width="stretch"
+                                             )
+                                        elif health == "Healthy" and reliability != "Low":
+
+                                             st.success("🌿 No significant disease activation detected.")
+                                        else:
+                                             st.warning("Image not found")
                          
                          with col_info:
                                    m1,m2,m3 = st.columns(3)
