@@ -1247,7 +1247,7 @@ with tab2:
                          try:
                               heatmap = create_disease_heatmap(DB_REPORT_FILE)
                               if heatmap:
-                                   st.components.v1.html(heatmap._repr_html_(), height=600, scrolling=False)
+                                   st.iframe(heatmap._repr_html_(), height=600)
                               else:
                                    st.warning("Could not generate heatmap. Check database data.")
                          except Exception as e:
