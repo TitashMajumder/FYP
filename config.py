@@ -1,6 +1,6 @@
 # File: config.py
-DB_REPORT_FILE   = "tree_survey.db"
-DB_TRAINING_FILE = "training_dataset.db"
+DB_REPORT_FILE   = "database/tree_survey.db"
+DB_TRAINING_FILE = "database/training_dataset.db"
 
 SURVEY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS survey (

@@ -12,14 +12,14 @@ import numpy as np
 import glob
 from matplotlib import cm
 from streamlit_folium import st_folium # type: ignore
-from WeatherService import get_weather
+from services.WeatherService import get_weather
 from streamlit_js_eval import get_geolocation # type: ignore
 
 # --- IMPORT BACKEND MODULES ---
-from MapVisualizer import create_health_map
+from services.MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_hybrid_analysis 
 from AIModel import analyze_tree_health, get_gps_from_stamp, load_custom_model_results, generate_disease_heatmap, generate_weather_advice
-from ReportGenerator import initialize_database, save_analysis_to_db
+from services.ReportGenerator import initialize_database, save_analysis_to_db
 from init_db import init_training_db
 from config import DB_REPORT_FILE as _DB_REPORT, DB_TRAINING_FILE as _DB_TRAINING  # Fix #19
 
@@ -1218,7 +1218,7 @@ with tab2:
      
      if os.path.exists(DB_REPORT_FILE):
           try:
-               from LocalityHeatmap import create_disease_heatmap, create_health_distribution_chart
+               from services.LocalityHeatmap import create_disease_heatmap, create_health_distribution_chart
                from streamlit_folium import st_folium
                
                # Check if we have data with GPS coordinates

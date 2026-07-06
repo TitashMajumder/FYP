@@ -15,7 +15,7 @@ from tensorflow.keras.models import load_model  # type: ignore
 from tensorflow.keras.preprocessing.image import load_img, img_to_array  # type: ignore
 
 # Global paths for the custom model
-CUSTOM_MODEL_PATH = 'plantvillage_tuned_model copy.h5'
+CUSTOM_MODEL_PATH = 'models/plantvillage_tuned_model copy.h5'
 IMAGE_SIZE = 128 
    
 # --- Custom Model Prediction Function ---
@@ -31,7 +31,7 @@ _class_labels = None
 def get_class_labels():
      global _class_labels
      if _class_labels is None:
-          with open('class_labels_combined.json', 'r') as f:
+          with open('models/class_labels_combined.json', 'r') as f:
                _class_labels = {int(k): v for k, v in json.load(f).items()}
      return _class_labels
 
