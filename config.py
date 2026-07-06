@@ -1,4 +1,11 @@
 # File: config.py
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+DATABASE_DIR = BASE_DIR / "database"
+DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+
 DB_REPORT_FILE   = "database/tree_survey.db"
 DB_TRAINING_FILE = "database/training_dataset.db"
 
