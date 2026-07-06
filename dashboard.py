@@ -7,16 +7,18 @@ import pandas as pd # type: ignore
 import sqlite3
 from fpdf import FPDF # type: ignore
 import hashlib
+import uuid
 import numpy as np
 import glob
 from matplotlib import cm
 from streamlit_folium import st_folium # type: ignore
+from WeatherService import get_weather
 from streamlit_js_eval import get_geolocation # type: ignore
 
 # --- IMPORT BACKEND MODULES ---
 from MapVisualizer import create_health_map
 from FuzzyLogic import get_fuzzy_hybrid_analysis 
-from AIModel import analyze_tree_health, get_gps_from_stamp, load_custom_model_results, generate_disease_heatmap
+from AIModel import analyze_tree_health, get_gps_from_stamp, load_custom_model_results, generate_disease_heatmap, generate_weather_advice
 from ReportGenerator import initialize_database, save_analysis_to_db
 from init_db import init_training_db
 from config import DB_REPORT_FILE as _DB_REPORT, DB_TRAINING_FILE as _DB_TRAINING  # Fix #19
@@ -80,8 +82,10 @@ def refine_box(box, shrink_ratio=0.15):
 
      return [int(ymin), int(xmin), int(ymax), int(xmax)]
 
-def save_segmented_image(original_image_path, box_coords, tree_name, timestamp_str):
-     """Crops and saves the segmented diseased area."""
+def save_segmented_image(original_image_path, box_coords, tree_name, timestamp_str, unique_idx=0):
+     """Crops and saves the segmented diseased area.
+     unique_idx disambiguates multiple results sharing the same tree_name and
+     timestamp within one batch, so they don't overwrite each other's file."""
      try:
           if not box_coords or len(box_coords) != 4: return None
           img = Image.open(original_image_path)
@@ -100,7 +104,7 @@ def save_segmented_image(original_image_path, box_coords, tree_name, timestamp_s
           
           clean_name = "".join(c for c in tree_name if c.isalnum() or c in (' ', '_')).strip().replace(' ', '_')
           clean_time = timestamp_str.replace(':', '').replace('-', '').replace('.', '')
-          filename = f"{clean_name}_{clean_time}.jpg"
+          filename = f"{clean_name}_{clean_time}_{unique_idx}.jpg"
           file_path = os.path.join(save_dir, filename)
           
           cropped_img.save(file_path)
@@ -197,8 +201,12 @@ def export_single_result_pdf(name, health, confidence, reliability, treatment_pl
      try:
           # Add heatmap image if available
           if heatmap_img is not None:
-               # Save heatmap temporarily
-               temp_heatmap_path = "temp_heatmap.png"
+               # Save heatmap temporarily. Fix: use a unique filename per call —
+               # a fixed "temp_heatmap.png" would collide when this runs for
+               # multiple results in one scan, or across concurrent user sessions
+               # on a shared server, corrupting whichever PDF reads it mid-write.
+               temp_heatmap_path = os.path.join("temp", f"heatmap_{uuid.uuid4().hex}.png")
+               os.makedirs("temp", exist_ok=True)
                heatmap_img.save(temp_heatmap_path)
                pdf.image(temp_heatmap_path, x=110, y=pdf.get_y() - 55, w=90)
                pdf.set_y(pdf.get_y() + 55)
@@ -447,10 +455,20 @@ with tab1:
                )
 
      camera_image = None
+     if 'last_camera_hash' not in st.session_state: st.session_state.last_camera_hash = None
      if st.session_state.camera_active:
           camera_image = st.camera_input("Capture Image", label_visibility="collapsed")
           if camera_image:
-               clear_old_results()
+               # Fix: st.camera_input keeps returning the same photo object on every
+               # rerun (button clicks, etc.) until a NEW photo is taken. Only clear
+               # existing results when the captured photo actually changed, mirroring
+               # the incoming_hash check already used for the file uploader below —
+               # otherwise clicking "Get Cure"/"Export"/anything else while in camera
+               # mode would wipe the just-computed diagnosis every time.
+               camera_hash = hashlib.md5(camera_image.getbuffer()).hexdigest()
+               if camera_hash != st.session_state.last_camera_hash:
+                    st.session_state.last_camera_hash = camera_hash
+                    clear_old_results()
 
      image_inputs = []
      if camera_image: image_inputs.append(camera_image)
@@ -498,7 +516,7 @@ with tab1:
                          """, unsafe_allow_html=True)
                     
                     with col4:
-                         accuracy = f"{(healthy/(total+1)*100):.0f}%" if total > 0 else "0%"
+                         accuracy = f"{(healthy/total*100):.0f}%" if total > 0 else "0%"
                          st.markdown(f"""
                          <div style="background: linear-gradient(135deg, rgba(30,50,70,0.8) 0%, rgba(59,130,246,0.2) 100%); padding: 20px; border-radius: 12px; border: 1px solid rgba(59,130,246,0.2); text-align: center;">
                               <p style="font-size: 12px; color: #888; margin: 0; text-transform: uppercase;">Health Rate</p>
@@ -607,10 +625,6 @@ with tab1:
                
      # ===== END: LANDING PAGE HIDDEN WHEN IMAGES UPLOAD =====
      if image_inputs:
-          # 1. Save inputs to temp — Fix #8: only rewrite/clean temp files
-          # when the uploaded content actually changed, not on every rerun
-          # (e.g. typing into the lat/lon fields used to leak a fresh
-          # scan_*.jpg on every keystroke).
           os.makedirs("temp", exist_ok=True)
           if 'temp_paths' not in st.session_state:
                st.session_state.temp_paths = []
@@ -696,7 +710,55 @@ with tab1:
                
                if st.session_state.manual_lat == 0.0:
                     st.caption("⚠️ Could not auto-detect location. Please enter manually.")
-
+                    
+          weather = get_weather(
+                    st.session_state.manual_lat,
+                    st.session_state.manual_lon
+                    )
+          if weather:
+               st.markdown("## 🌦 Current Weather")
+               c1, c2, c3, c4 = st.columns(4)
+               c1.metric(
+                    "🌡 Temperature",
+                    f"{weather['temperature']} °C"
+               )
+               c2.metric(
+                    "💧 Humidity",
+                    f"{weather['humidity']} %"
+               )
+               c3.metric(
+                    "💨 Wind",
+                    f"{weather['wind_speed']} m/s"
+               )
+               c4.metric(
+                    "☁ Condition",
+                    weather["weather"]
+               )
+               st.caption(weather["description"].title())
+          if weather:
+               humidity = weather["humidity"]
+               temperature = weather["temperature"]
+               wind = weather["wind_speed"]
+               if humidity >= 85:
+                    st.error(
+                         "🔴 High fungal disease risk due to very high humidity."
+                    )
+               elif humidity >= 70:
+                    st.warning(
+                         "🟡 Moderate fungal disease risk."
+                    )
+               else:
+                    st.success(
+                         "🟢 Low fungal disease risk."
+                    )
+               if temperature >= 38:
+                    st.warning(
+                         "🌞 High temperature may increase plant stress."
+                    )
+               if wind >= 10:
+                    st.info(
+                         "💨 Strong winds may reduce spraying effectiveness."
+                    )
           # 3. Analyze Button
           st.markdown("""
                <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(144,238,144,0.3), transparent); margin: 20px 0;"></div>
@@ -817,7 +879,7 @@ with tab1:
                     timestamp = datetime.datetime.now().isoformat()
                     saved_count = 0
 
-                    for res in final_results:
+                    for save_idx, res in enumerate(final_results):
                          name = res.get("tree_name", "Unknown")
                          health = res.get("health_condition", "Unknown")
                          confidence = int(res.get("combined_fuzzy_input", 0))
@@ -834,8 +896,12 @@ with tab1:
                          )
 
                          # Segmentation and Training DB saving
+                         # Fix: timestamp is shared across the whole batch, so two
+                         # results with the same tree_name would otherwise build the
+                         # exact same filename and silently overwrite each other's
+                         # saved crop. save_idx makes every filename unique.
                          segment_path = save_segmented_image(
-                              current_img_path, box, name, timestamp
+                              current_img_path, box, name, timestamp, save_idx
                          )
 
                          # SAVE TO TRAINING DB ONLY AFTER FINAL DECISION
@@ -890,7 +956,37 @@ with tab1:
                     st.write(st.session_state.analysis_details)
                else:
                     st.markdown('<h3 style="margin-bottom: 20px;">📋 Analysis Results</h3>', unsafe_allow_html=True)
-                    
+
+                    # Fix: generate the weather advisory ONCE per scan, not once
+                    # per detected tree. It was previously called inside the
+                    # per-tree loop below — for a scan with 3 trees, that fired
+                    # 3 separate (identical) Gemini calls for the same weather
+                    # data, burning through API rate limits far faster than
+                    # necessary. Cache it in session_state so it also doesn't
+                    # re-fire on every unrelated Streamlit rerun.
+                    results_signature = (
+                         st.session_state.analysis_details,
+                         weather["temperature"] if weather else None,
+                         weather["humidity"] if weather else None,
+                    )
+                    # Use the most severe tree's treatment plan as the shared
+                    # reference point for the advisory (Diseased > Stressed > Healthy)
+                    severity_order = {"Diseased": 0, "Stressed": 1, "Healthy": 2}
+                    primary_result = min(
+                         results,
+                         key=lambda r: severity_order.get(r.get("health_condition"), 1)
+                    ) if results else {}
+                    primary_treatment_plan = primary_result.get("treatment_plan", [])
+
+                    if weather and st.session_state.get("weather_advice_signature") != results_signature:
+                         # Deterministic now — no API call, no need for a spinner.
+                         st.session_state.weather_advice = generate_weather_advice(
+                              weather, st.session_state.analysis_details, primary_treatment_plan
+                         )
+                         st.session_state.weather_advice_signature = results_signature
+                    elif not weather:
+                         st.session_state.weather_advice = None
+
                     for i, res in enumerate(results):
                          name = res.get("tree_name", "Unknown")
                          health = res.get("health_condition", "Unknown")
@@ -1010,6 +1106,37 @@ with tab1:
                                         </div>
                                         """,unsafe_allow_html=True)
                                    
+                                   if weather and st.session_state.get("weather_advice"):
+                                        advice = st.session_state.weather_advice
+                                        if isinstance(advice, dict):
+                                             st.markdown(f"""
+                                             <div style="background:#152622;border-radius:12px;padding:14px 18px;
+                                             border-left:4px solid #3b82f6;margin-top:14px;">
+                                             <div style="color:#90EE90;font-weight:bold;font-size:15px;margin-bottom:10px;">🌦 Weather Advisory</div>
+                                             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 4px;
+                                             border-bottom:1px solid rgba(255,255,255,.08);">
+                                                  <div style="font-size:17px;flex-shrink:0;">🌧️</div>
+                                                  <div style="color:#e0e0e0;line-height:1.45;font-size:14px;">
+                                                  <span style="color:#f59e0b;font-weight:600;">Disease Risk</span> — {advice['disease_risk']}</div>
+                                             </div>
+                                             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 4px;
+                                             border-bottom:1px solid rgba(255,255,255,.08);">
+                                                  <div style="font-size:17px;flex-shrink:0;">🌦️</div>
+                                                  <div style="color:#e0e0e0;line-height:1.45;font-size:14px;">
+                                                  <span style="color:#3b82f6;font-weight:600;">Weather Impact</span> — {advice['weather_impact']}</div>
+                                             </div>
+                                             <div style="display:flex;align-items:flex-start;gap:10px;padding:7px 4px;">
+                                                  <div style="font-size:17px;flex-shrink:0;">🕒</div>
+                                                  <div style="color:#e0e0e0;line-height:1.45;font-size:14px;">
+                                                  <span style="color:#22c55e;font-weight:600;">Best Treatment Time</span> — {advice['best_treatment_time']}</div>
+                                             </div>
+                                             </div>
+                                             """, unsafe_allow_html=True)
+                                        else:
+                                             # Fallback in case an older raw-string advisory is still in session state
+                                             st.markdown("### 🌦 Weather Advisory")
+                                             st.info(advice)
+                                   
                                    # NEW — PDF EXPORT BUTTON
                                    pdf_data = export_single_result_pdf(
                                         name, 
@@ -1027,17 +1154,10 @@ with tab1:
                                    action_col1, action_col2, action_col3 = st.columns(3, gap="medium")
                                    
                                    # Get Cure Button (already exists, move to col1)
+                                   cure_key = f"show_cure_{i}_{name.replace(' ', '_')}"
                                    with action_col1:
                                         if st.button(f"💊 Get Cure for {name}", key=f"cure_btn_{i}_{name.replace(' ', '_')}", width='stretch'):
-                                             with st.spinner("Generating cure..."):
-                                                  time.sleep(0.6)
-                                                  treatment_plan = res.get("treatment_plan", [])
-                                                  if treatment_plan:
-                                                       st.success("Treatment Plan")
-                                                       for step in treatment_plan:
-                                                            st.markdown(f"- {step}")
-                                                  else:
-                                                       st.info("No treatment required. The plant is healthy.")
+                                             st.session_state[cure_key] = not st.session_state.get(cure_key, False)
                                    
                                    # Google Maps Button
                                    with action_col2:
@@ -1063,6 +1183,34 @@ with tab1:
                                              key=f"pdf_btn_{i}_{name.replace(' ', '_')}",
                                              width='stretch'
                                         )
+
+                                   # Treatment Plan — rendered full-width below the
+                                   # buttons (not confined to the narrow action_col1)
+                                   # so steps don't wrap onto 3 lines each, and as one
+                                   # compact card with thin dividers instead of a
+                                   # separate boxy card per step.
+                                   if st.session_state.get(cure_key):
+                                        treatment_plan = res.get("treatment_plan", [])
+                                        if treatment_plan:
+                                             steps_html = "".join(
+                                                  f"""<div style="display:flex;align-items:flex-start;gap:10px;
+                                                  padding:8px 4px;{'border-bottom:1px solid rgba(255,255,255,.08);' if idx < len(treatment_plan) else ''}">
+                                                  <div style="background:#2E8B57;color:white;border-radius:50%;min-width:22px;
+                                                  height:22px;display:flex;align-items:center;justify-content:center;
+                                                  font-weight:bold;font-size:12px;flex-shrink:0;">{idx}</div>
+                                                  <div style="color:#e0e0e0;line-height:1.4;font-size:14.5px;">{step}</div>
+                                                  </div>"""
+                                                  for idx, step in enumerate(treatment_plan, 1)
+                                             )
+                                             st.markdown(f"""
+                                             <div style="background:#152622;border-radius:12px;padding:14px 18px;
+                                             border-left:4px solid #2E8B57;margin-top:12px;">
+                                             <div style="color:#90EE90;font-weight:bold;font-size:15px;margin-bottom:6px;">💊 Treatment Plan</div>
+                                             {steps_html}
+                                             </div>
+                                             """, unsafe_allow_html=True)
+                                        else:
+                                             st.info("No treatment required. The plant is healthy.")
 
 # --- TAB 2: MAP ---
 with tab2:

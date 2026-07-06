@@ -321,3 +321,104 @@ def generate_disease_heatmap(image_path, model=None):
      except Exception as e:
           print(f"Grad-CAM error: {e}")
           return None, 0.0
+     
+def generate_weather_advice_ai(weather, diagnosis, treatment_plan=None):
+     """Gemini-backed weather advisory. Kept for optional use (e.g. richer,
+     diagnosis-aware phrasing) but NOT called by default — see
+     generate_weather_advice() below, which covers the same three sections
+     deterministically without spending an API call on every single scan."""
+     plan_text = "\n".join(f"- {step}" for step in (treatment_plan or [])) or "Not available."
+     prompt = f"""
+     You are a professional arborist.
+
+     Current Weather:
+     - Temperature: {weather['temperature']}°C
+     - Humidity: {weather['humidity']}%
+     - Wind Speed: {weather['wind_speed']} m/s
+     - Condition: {weather['description']}
+
+     Tree Diagnosis:
+     {diagnosis}
+
+     Existing Treatment Plan (already shown to the user separately):
+     {plan_text}
+
+     Based on the current weather and diagnosis, provide ONLY these three sections:
+
+     🌧 Disease Risk: Explain the current disease risk in 1-2 short sentences.
+
+     🌦 Weather Impact: Explain how today's weather affects the tree in 1-2 short sentences.
+
+     🕒 Best Treatment Time: Suggest the best time today (or tomorrow if needed) for treatment in 1-2 short sentences.
+
+     Rules:
+     - Return ONLY these three sections.
+     - Do NOT add recommendations.
+     - Do NOT repeat the treatment plan.
+     - Do NOT use JSON.
+     - Do NOT use Markdown.
+     - Maximum 25 words per section.
+     - Maximum 75 words total.
+     """
+     advisory_model = genai.GenerativeModel(
+          "gemini-2.5-flash-lite",
+          generation_config={"temperature": 0.0}
+     )
+     try:
+          response = advisory_model.generate_content(prompt)
+          return response.text
+     except Exception as e:
+          print(f"Weather advisory generation failed: {e}")
+          return None
+
+
+def generate_weather_advice(weather, diagnosis=None, treatment_plan=None):
+     """
+     Deterministic, rule-based weather advisory. Costs zero API calls.
+     Replaces the previous per-scan Gemini call (see generate_weather_advice_ai
+     above) — the three sections only ever depended on humidity/temperature/
+     wind thresholds, so there's no need to pay for an LLM call on every scan.
+
+     Returns a dict: {"disease_risk": str, "weather_impact": str, "best_treatment_time": str}
+     diagnosis/treatment_plan are accepted for signature compatibility and
+     future use, but aren't required for the current rule set.
+     """
+     humidity = weather.get("humidity", 0)
+     temperature = weather.get("temperature", 0)
+     wind = weather.get("wind_speed", 0)
+
+     # --- Disease Risk ---
+     if humidity >= 85:
+          disease_risk = "High fungal disease risk — humidity is very high. Watch closely for new spots or lesions."
+     elif humidity >= 70:
+          disease_risk = "Moderate fungal disease risk from elevated humidity. Check affected areas regularly."
+     else:
+          disease_risk = "Low disease risk — current humidity is not favorable for fungal spread."
+
+     # --- Weather Impact ---
+     impact_parts = []
+     if temperature >= 38:
+          impact_parts.append("high heat may add extra stress to the tree")
+     elif temperature <= 5:
+          impact_parts.append("cold conditions may slow recovery")
+     else:
+          impact_parts.append("temperature is within a comfortable range")
+     if wind >= 10:
+          impact_parts.append("strong winds may reduce spray/treatment effectiveness")
+     else:
+          impact_parts.append("winds are calm enough for treatment")
+     weather_impact = "Today, " + " and ".join(impact_parts) + "."
+
+     # --- Best Treatment Time ---
+     if wind >= 10 or temperature >= 38:
+          best_treatment_time = "Early morning or late evening is best — avoid midday heat and wind."
+     elif humidity >= 85:
+          best_treatment_time = "Treat as soon as possible; delaying risks further fungal spread."
+     else:
+          best_treatment_time = "Any time in daylight works well; morning is still ideal."
+
+     return {
+          "disease_risk": disease_risk,
+          "weather_impact": weather_impact,
+          "best_treatment_time": best_treatment_time,
+     }
